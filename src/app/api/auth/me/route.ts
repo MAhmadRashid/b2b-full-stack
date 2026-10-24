@@ -17,7 +17,19 @@ export async function GET(req: NextRequest) {
         name: true,
         avatarUrl: true,
         systemRole: true,
+        emailVerified: true,
         createdAt: true,
+        orgMemberships: {
+          include: {
+            organization: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+              },
+            },
+          },
+        },
         memberships: {
           include: {
             workspace: {
@@ -26,6 +38,7 @@ export async function GET(req: NextRequest) {
                 name: true,
                 slug: true,
                 plan: true,
+                organizationId: true,
                 subscriptionStatus: true,
                 requestsThisMonth: true,
                 monthlyRequestLimit: true,
@@ -49,13 +62,21 @@ export async function GET(req: NextRequest) {
         name: userWithWorkspaces.name,
         avatarUrl: userWithWorkspaces.avatarUrl,
         systemRole: userWithWorkspaces.systemRole,
+        emailVerified: userWithWorkspaces.emailVerified,
         createdAt: userWithWorkspaces.createdAt,
       },
+      organizations: userWithWorkspaces.orgMemberships?.map((om) => ({
+        id: om.organization.id,
+        name: om.organization.name,
+        slug: om.organization.slug,
+        role: om.role,
+      })) || [],
       workspaces: userWithWorkspaces.memberships.map((m) => ({
         id: m.workspace.id,
         name: m.workspace.name,
         slug: m.workspace.slug,
         role: m.role,
+        organizationId: m.workspace.organizationId,
         plan: m.workspace.plan,
         subscriptionStatus: m.workspace.subscriptionStatus,
         requestsThisMonth: m.workspace.requestsThisMonth,

@@ -138,9 +138,12 @@ export default function LoginPage() {
           <div className="form-group">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <label className="form-label" htmlFor="password">Password</label>
-              <span style={{ fontSize: "12px", color: "var(--accent-indigo)", cursor: "pointer" }}>
+              <Link
+                href="/forgot-password"
+                style={{ fontSize: "12px", color: "var(--accent-indigo)", textDecoration: "none" }}
+              >
                 Forgot password?
-              </span>
+              </Link>
             </div>
             <div style={{ position: "relative" }}>
               <input

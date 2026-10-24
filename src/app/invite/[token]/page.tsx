@@ -33,7 +33,30 @@ export default function InviteAcceptPage({ params }: InvitePageProps) {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeclining, setIsDeclining] = useState(false);
+  const [declined, setDeclined] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const handleDeclineInvite = async () => {
+    if (!confirm("Are you sure you want to decline this invitation?")) return;
+    setIsDeclining(true);
+    setSubmitError(null);
+    try {
+      const res = await fetch(`/api/invitations/${token}/reject`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setDeclined(true);
+      } else {
+        setSubmitError(data.error || "Failed to decline invitation.");
+      }
+    } catch {
+      setSubmitError("Network error while declining invitation.");
+    } finally {
+      setIsDeclining(false);
+    }
+  };
 
   useEffect(() => {
     async function loadInvitation() {
@@ -174,8 +197,45 @@ export default function InviteAcceptPage({ params }: InvitePageProps) {
           </div>
         )}
 
+        {/* Declined State */}
+        {declined && (
+          <div
+            className="glass-card"
+            style={{
+              padding: "36px 28px",
+              textAlign: "center",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+            }}
+          >
+            <div
+              style={{
+                width: "48px",
+                height: "48px",
+                borderRadius: "50%",
+                background: "rgba(100, 116, 139, 0.15)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+                marginBottom: "16px",
+              }}
+            >
+              <CheckCircle2 size={24} />
+            </div>
+            <h3 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>
+              Invitation Declined
+            </h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: "13.5px", marginBottom: "24px" }}>
+              You have declined the team invitation. No account changes were made and this invitation token has been invalidated.
+            </p>
+            <Link href="/" className="btn btn-secondary" style={{ width: "100%" }}>
+              Return to Homepage
+            </Link>
+          </div>
+        )}
+
         {/* Valid Invitation Form */}
-        {!loading && invitationData && (
+        {!loading && !declined && invitationData && (
           <div
             className="glass-card"
             style={{
@@ -327,29 +387,45 @@ export default function InviteAcceptPage({ params }: InvitePageProps) {
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="btn btn-primary"
-                style={{
-                  width: "100%",
-                  marginTop: "8px",
-                  padding: "12px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "8px",
-                }}
-              >
-                {isSubmitting ? (
-                  "Activating Membership..."
-                ) : (
-                  <>
-                    <span>Accept & Enter Workspace</span>
-                    <ArrowRight size={16} />
-                  </>
-                )}
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isDeclining}
+                  className="btn btn-primary"
+                  style={{
+                    width: "100%",
+                    padding: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                  }}
+                >
+                  {isSubmitting ? (
+                    "Activating Membership..."
+                  ) : (
+                    <>
+                      <span>Accept & Enter Workspace</span>
+                      <ArrowRight size={16} />
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDeclineInvite}
+                  disabled={isSubmitting || isDeclining}
+                  className="btn btn-secondary"
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    color: "var(--text-secondary)",
+                    borderColor: "rgba(255, 255, 255, 0.1)",
+                  }}
+                >
+                  {isDeclining ? "Declining..." : "Decline Invitation"}
+                </button>
+              </div>
             </form>
           </div>
         )}

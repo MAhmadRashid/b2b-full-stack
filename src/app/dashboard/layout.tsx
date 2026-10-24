@@ -19,6 +19,8 @@ import {
   Menu,
   X,
   Sparkles,
+  Building,
+  AlertTriangle,
 } from "lucide-react";
 
 interface WorkspaceInfo {
@@ -27,9 +29,18 @@ interface WorkspaceInfo {
   slug: string;
   role: string;
   plan: string;
+  organizationId?: string | null;
   subscriptionStatus: string;
   requestsThisMonth: number;
   monthlyRequestLimit: number;
+}
+
+interface OrganizationInfo {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+  plan?: string;
 }
 
 interface UserInfo {
@@ -38,11 +49,13 @@ interface UserInfo {
   email: string;
   avatarUrl: string | null;
   systemRole: string;
+  emailVerified?: string | null;
 }
 
 interface DashboardContextType {
   user: UserInfo | null;
   workspaces: WorkspaceInfo[];
+  organizations: OrganizationInfo[];
   activeWorkspace: WorkspaceInfo | null;
   setActiveWorkspaceId: (id: string) => void;
   refreshUserData: () => Promise<void>;
@@ -51,6 +64,7 @@ interface DashboardContextType {
 export const DashboardContext = createContext<DashboardContextType>({
   user: null,
   workspaces: [],
+  organizations: [],
   activeWorkspace: null,
   setActiveWorkspaceId: () => {},
   refreshUserData: async () => {},
@@ -64,6 +78,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const [user, setUser] = useState<UserInfo | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
+  const [organizations, setOrganizations] = useState<OrganizationInfo[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -71,6 +86,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [createWorkspaceModal, setCreateWorkspaceModal] = useState(false);
   const [newWsName, setNewWsName] = useState("");
   const [testEventToast, setTestEventToast] = useState<string | null>(null);
+  const [sendingVerification, setSendingVerification] = useState(false);
+  const [verificationSentMessage, setVerificationSentMessage] = useState<string | null>(null);
 
   const fetchSession = async () => {
     try {
@@ -82,6 +99,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const data = await res.json();
       setUser(data.user);
       setWorkspaces(data.workspaces || []);
+      setOrganizations(data.organizations || []);
 
       if (data.workspaces?.length > 0 && !activeWorkspaceId) {
         // Retrieve stored active workspace or default to first
@@ -93,6 +111,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push("/login");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    setSendingVerification(true);
+    try {
+      const res = await fetch("/api/auth/send-verification", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setVerificationSentMessage("Verification link sent! Check your inbox.");
+        setTimeout(() => setVerificationSentMessage(null), 5000);
+      } else {
+        setVerificationSentMessage(data.error || "Failed to send verification link.");
+        setTimeout(() => setVerificationSentMessage(null), 4000);
+      }
+    } catch {
+      setVerificationSentMessage("Network error sending verification link.");
+      setTimeout(() => setVerificationSentMessage(null), 4000);
+    } finally {
+      setSendingVerification(false);
     }
   };
 
@@ -198,6 +236,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { label: "Analytics & Telemetry", href: "/dashboard/analytics", icon: BarChart3 },
     { label: "Developer API Keys", href: "/dashboard/api-keys", icon: Key },
     { label: "Team & Permissions", href: "/dashboard/team", icon: Users },
+    { label: "Organization", href: "/dashboard/organization", icon: Building },
     { label: "Plans & Billing", href: "/dashboard/billing", icon: CreditCard },
     { label: "Settings", href: "/dashboard/settings", icon: Settings },
   ];
@@ -211,6 +250,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       value={{
         user,
         workspaces,
+        organizations,
         activeWorkspace,
         setActiveWorkspaceId: handleSelectWorkspace,
         refreshUserData: fetchSession,
@@ -488,6 +528,46 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </button>
             </div>
           </header>
+
+          {/* Unverified Email Alert Banner */}
+          {user && !user.emailVerified && (
+            <div
+              style={{
+                background: "rgba(234, 179, 8, 0.1)",
+                borderBottom: "1px solid rgba(234, 179, 8, 0.25)",
+                padding: "10px 28px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "12px",
+                fontSize: "13px",
+                color: "#fde047",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                <span>
+                  Your email address <strong style={{ color: "#fff" }}>({user.email})</strong> is unverified.
+                  Please check your inbox or request a verification link.
+                </span>
+              </div>
+              <button
+                onClick={handleResendVerification}
+                disabled={sendingVerification || !!verificationSentMessage}
+                className="btn btn-secondary btn-sm"
+                style={{
+                  background: "rgba(234, 179, 8, 0.15)",
+                  borderColor: "rgba(234, 179, 8, 0.35)",
+                  color: "#fef08a",
+                  fontSize: "12px",
+                  padding: "4px 12px",
+                }}
+              >
+                {sendingVerification ? "Sending Link..." : verificationSentMessage || "Resend Verification Email"}
+              </button>
+            </div>
+          )}
 
           {/* Event Toast alert */}
           {testEventToast && (

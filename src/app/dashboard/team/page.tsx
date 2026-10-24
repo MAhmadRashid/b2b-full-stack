@@ -15,6 +15,7 @@ import {
   Check,
   Clock,
   Link as LinkIcon,
+  RefreshCw,
 } from "lucide-react";
 
 interface MemberItem {
@@ -129,6 +130,26 @@ export default function TeamPage() {
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleResendInvitation = async (invitationId: string) => {
+    if (!activeWorkspace) return;
+    try {
+      const res = await fetch(`/api/workspaces/${activeWorkspace.id}/members/resend`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invitationId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccessMsg("Invitation refreshed and validity extended by 7 days!");
+        await fetchMembers();
+      } else {
+        setError(data.error || "Failed to resend invitation");
+      }
+    } catch {
+      setError("Failed to resend invitation");
     }
   };
 
@@ -272,6 +293,7 @@ export default function TeamPage() {
                 <tr>
                   <th>Invited Email</th>
                   <th>Assigned Role</th>
+                  <th>Status</th>
                   <th>Invitation Link</th>
                   <th>Expires</th>
                   {canManageTeam && <th style={{ textAlign: "right" }}>Actions</th>}
@@ -281,6 +303,7 @@ export default function TeamPage() {
                 {pendingInvitations.map((inv) => {
                   const isCopied = copiedTokenId === inv.id;
                   const fullUrl = typeof window !== "undefined" ? `${window.location.origin}${inv.inviteUrl}` : inv.inviteUrl;
+                  const isExpired = new Date(inv.expiresAt) < new Date();
 
                   return (
                     <tr key={inv.id}>
@@ -289,6 +312,13 @@ export default function TeamPage() {
                         <span className="badge badge-indigo" style={{ fontSize: "11px" }}>
                           {inv.role}
                         </span>
+                      </td>
+                      <td>
+                        {isExpired ? (
+                          <span className="badge badge-danger" style={{ fontSize: "10.5px" }}>EXPIRED</span>
+                        ) : (
+                          <span className="badge badge-warning" style={{ fontSize: "10.5px" }}>PENDING</span>
+                        )}
                       </td>
                       <td>
                         <button
@@ -301,19 +331,30 @@ export default function TeamPage() {
                           <span>{isCopied ? "Link Copied" : "Copy Onboarding Link"}</span>
                         </button>
                       </td>
-                      <td style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                      <td style={{ fontSize: "12px", color: isExpired ? "#f87171" : "var(--text-muted)" }}>
                         {new Date(inv.expiresAt).toLocaleDateString()}
                       </td>
                       {canManageTeam && (
                         <td style={{ textAlign: "right" }}>
-                          <button
-                            type="button"
-                            onClick={() => handleRevokeInvitation(inv.id)}
-                            className="btn btn-danger btn-sm"
-                            style={{ padding: "4px 8px", fontSize: "11.5px" }}
-                          >
-                            <Trash2 size={12} /> Revoke
-                          </button>
+                          <div style={{ display: "inline-flex", gap: "8px", justifyContent: "flex-end" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleResendInvitation(inv.id)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: "4px 8px", fontSize: "11.5px", gap: "4px" }}
+                              title="Resend invitation and refresh expiry"
+                            >
+                              <RefreshCw size={12} /> Resend
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRevokeInvitation(inv.id)}
+                              className="btn btn-danger btn-sm"
+                              style={{ padding: "4px 8px", fontSize: "11.5px" }}
+                            >
+                              <Trash2 size={12} /> Revoke
+                            </button>
+                          </div>
                         </td>
                       )}
                     </tr>
