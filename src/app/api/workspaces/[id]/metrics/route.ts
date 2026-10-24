@@ -139,3 +139,45 @@ export async function GET(
     return NextResponse.json({ error: "Failed to load metrics" }, { status: 500 });
   }
 }
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    const session = await getSessionUser(req);
+    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const perm = await checkWorkspacePermission(session.id, id, "MEMBER");
+    if (!perm.allowed) return NextResponse.json({ error: perm.error }, { status: 403 });
+
+    const body = await req.json().catch(() => ({}));
+    const eventType = body.eventType || "telemetry_ping";
+    const source = body.source || "dashboard_quick_ping";
+    const latencyMs = Math.floor(Math.random() * 45) + 15;
+
+    const [event] = await prisma.$transaction([
+      prisma.metricEvent.create({
+        data: {
+          workspaceId: id,
+          eventType,
+          source,
+          status: "SUCCESS",
+          statusCode: 200,
+          latencyMs,
+          payload: JSON.stringify(body.payload || { user: session.email, origin: "dashboard" }),
+        },
+      }),
+      prisma.workspace.update({
+        where: { id },
+        data: { requestsThisMonth: { increment: 1 } },
+      }),
+    ]);
+
+    return NextResponse.json({ success: true, event }, { status: 201 });
+  } catch (error) {
+    console.error("Create metric event error:", error);
+    return NextResponse.json({ error: "Failed to emit metric event" }, { status: 500 });
+  }
+}

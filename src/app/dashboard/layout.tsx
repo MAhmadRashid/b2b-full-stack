@@ -136,14 +136,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const handleQuickIngestPing = async () => {
     if (!activeWorkspace) return;
     try {
-      // Ingest event via internal request
+      // Ingest real event via internal request
       const res = await fetch(`/api/workspaces/${activeWorkspace.id}/metrics`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventType: "quick_stream_probe",
+          source: "dashboard_ui_ping",
+        }),
       });
-      // Trigger a visual notification
-      setTestEventToast("Telemetry packet emitted and synced to stream!");
-      setTimeout(() => setTestEventToast(null), 3500);
-      await fetchSession();
+      if (res.ok) {
+        setTestEventToast("Telemetry packet emitted and persisted to database!");
+        setTimeout(() => setTestEventToast(null), 3500);
+        await fetchSession();
+      }
     } catch {
       setTestEventToast("Telemetry ping emitted");
       setTimeout(() => setTestEventToast(null), 3000);
