@@ -40,6 +40,7 @@ model Workspace {
   invoices            Invoice[]
   auditLogs           AuditLog[]
   webhooks            Webhook[]
+  invitations         Invitation[]
 }
 
 model Membership {
@@ -127,4 +128,20 @@ model Webhook {
   createdAt   DateTime  @default(now())
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Invitation {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  email        String
+  role         String    @default("MEMBER") // ADMIN, MEMBER, VIEWER
+  token        String    @unique
+  expiresAt    DateTime
+  inviterEmail String?
+  createdAt    DateTime  @default(now())
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([email])
 }

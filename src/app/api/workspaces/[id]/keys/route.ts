@@ -36,6 +36,7 @@ export async function GET(
         scopes: k.scopes.split(","),
         revoked: k.revoked,
         lastUsedAt: k.lastUsedAt,
+        expiresAt: k.expiresAt,
         createdAt: k.createdAt,
         creator: k.user.name || k.user.email,
       })),
@@ -60,10 +61,25 @@ export async function POST(
     if (!perm.allowed) return NextResponse.json({ error: perm.error }, { status: 403 });
 
     const body = await req.json();
-    const { name, scopes = ["metrics:read", "events:write"], environment = "live" } = body;
+    const { name, scopes = ["metrics:read", "events:write"], environment = "live", expiresIn = "never" } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: "Key name is required" }, { status: 400 });
+    }
+
+    // Calculate expiration date
+    let expiresAt: Date | null = null;
+    if (expiresIn === "30d") {
+      expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    } else if (expiresIn === "90d") {
+      expiresAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    } else if (expiresIn === "1y" || expiresIn === "365d") {
+      expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+    } else if (expiresIn && expiresIn !== "never") {
+      const days = parseInt(expiresIn, 10);
+      if (!isNaN(days) && days > 0) {
+        expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+      }
     }
 
     // Generate a secure raw key: pfl_[live|test]_[32 random hex chars]
@@ -82,6 +98,7 @@ export async function POST(
         keyPrefix,
         hashedKey,
         scopes: scopeString,
+        expiresAt,
       },
     });
 
@@ -90,7 +107,7 @@ export async function POST(
       userId: session.id,
       userEmail: session.email,
       action: "API_KEY_CREATED",
-      details: `Generated API key '${name.trim()}' with prefix ${keyPrefix}`,
+      details: `Generated API key '${name.trim()}' with prefix ${keyPrefix}${expiresAt ? ` (expires ${expiresAt.toISOString()})` : " (never expires)"}`,
     });
 
     // Note: rawKey is ONLY returned once during creation
@@ -101,6 +118,7 @@ export async function POST(
         keyPrefix: apiKey.keyPrefix,
         scopes: apiKey.scopes.split(","),
         createdAt: apiKey.createdAt,
+        expiresAt: apiKey.expiresAt,
         rawKey, // Revealed once!
       },
     }, { status: 201 });

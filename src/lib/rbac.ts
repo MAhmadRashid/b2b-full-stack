@@ -10,8 +10,9 @@ const ROLE_RANKS: Record<WorkspaceRole, number> = {
 };
 
 export function hasMinimumRole(userRole: WorkspaceRole, requiredRole: WorkspaceRole): boolean {
-  const userRank = ROLE_RANKS[userRole] ?? 0;
-  const reqRank = ROLE_RANKS[requiredRole] ?? 0;
+  const userRank = ROLE_RANKS[userRole];
+  const reqRank = ROLE_RANKS[requiredRole];
+  if (userRank === undefined || reqRank === undefined) return false;
   return userRank >= reqRank;
 }
 

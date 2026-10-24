@@ -13,6 +13,10 @@ import {
   Eye,
   X,
   RefreshCw,
+  Download,
+  FileSpreadsheet,
+  FileCode,
+  ChevronDown,
 } from "lucide-react";
 
 export default function AnalyticsPage() {
@@ -23,6 +27,17 @@ export default function AnalyticsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = (format: "csv" | "json") => {
+    if (!activeWorkspace) return;
+    setShowExportMenu(false);
+    setIsExporting(true);
+    const url = `/api/workspaces/${activeWorkspace.id}/metrics/export?format=${format}`;
+    window.open(url, "_blank");
+    setTimeout(() => setIsExporting(false), 2000);
+  };
 
   const fetchAnalytics = async () => {
     if (!activeWorkspace) return;
@@ -69,32 +84,106 @@ export default function AnalyticsPage() {
           </p>
         </div>
 
-        {/* Range Selector */}
-        <div
-          style={{
-            display: "inline-flex",
-            background: "rgba(255, 255, 255, 0.04)",
-            border: "1px solid var(--border-medium)",
-            borderRadius: "8px",
-            padding: "2px",
-          }}
-        >
-          {["24h", "7d", "30d"].map((r) => (
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          {/* Export Raw Telemetry Button & Dropdown */}
+          <div style={{ position: "relative" }}>
             <button
-              key={r}
-              onClick={() => setRange(r)}
-              style={{
-                padding: "6px 14px",
-                borderRadius: "6px",
-                fontSize: "12.5px",
-                fontWeight: 600,
-                color: range === r ? "#fff" : "var(--text-muted)",
-                background: range === r ? "var(--accent-indigo)" : "transparent",
-              }}
+              type="button"
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="btn btn-secondary btn-sm"
+              style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              disabled={isExporting}
             >
-              {r.toUpperCase()}
+              <Download size={14} color="#06b6d4" />
+              <span>{isExporting ? "Exporting..." : "Export Raw Telemetry"}</span>
+              <ChevronDown
+                size={13}
+                style={{
+                  transform: showExportMenu ? "rotate(180deg)" : "none",
+                  transition: "transform 0.2s",
+                }}
+              />
             </button>
-          ))}
+
+            {showExportMenu && (
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "calc(100% + 6px)",
+                  background: "#121624",
+                  border: "1px solid var(--border-medium)",
+                  borderRadius: "8px",
+                  padding: "6px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "4px",
+                  minWidth: "210px",
+                  zIndex: 50,
+                  boxShadow: "0 10px 25px rgba(0, 0, 0, 0.5)",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleExport("csv")}
+                  className="btn btn-ghost btn-sm"
+                  style={{
+                    justifyContent: "flex-start",
+                    gap: "8px",
+                    width: "100%",
+                    fontSize: "12.5px",
+                    textAlign: "left",
+                  }}
+                >
+                  <FileSpreadsheet size={14} color="#34d399" />
+                  <span>Download CSV (.csv)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExport("json")}
+                  className="btn btn-ghost btn-sm"
+                  style={{
+                    justifyContent: "flex-start",
+                    gap: "8px",
+                    width: "100%",
+                    fontSize: "12.5px",
+                    textAlign: "left",
+                  }}
+                >
+                  <FileCode size={14} color="#818cf8" />
+                  <span>Download JSON (.json)</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Range Selector */}
+          <div
+            style={{
+              display: "inline-flex",
+              background: "rgba(255, 255, 255, 0.04)",
+              border: "1px solid var(--border-medium)",
+              borderRadius: "8px",
+              padding: "2px",
+            }}
+          >
+            {["24h", "7d", "30d"].map((r) => (
+              <button
+                key={r}
+                onClick={() => setRange(r)}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: "6px",
+                  fontSize: "12.5px",
+                  fontWeight: 600,
+                  color: range === r ? "#fff" : "var(--text-muted)",
+                  background: range === r ? "var(--accent-indigo)" : "transparent",
+                }}
+              >
+                {r.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

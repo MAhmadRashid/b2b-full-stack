@@ -49,6 +49,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Check key expiration
+    if (matchedKey.expiresAt && new Date(matchedKey.expiresAt) < new Date()) {
+      return NextResponse.json(
+        {
+          error: "Expired",
+          message: "API key has expired. Please rotate or generate a new key in the dashboard.",
+          expiredAt: matchedKey.expiresAt,
+        },
+        { status: 401 }
+      );
+    }
+
     const workspace = matchedKey.workspace;
 
     // 3. Check Quota / Rate Limiting

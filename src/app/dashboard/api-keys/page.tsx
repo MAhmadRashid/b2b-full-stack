@@ -23,6 +23,7 @@ interface ApiKeyItem {
   scopes: string[];
   revoked: boolean;
   lastUsedAt: string | null;
+  expiresAt: string | null;
   createdAt: string;
   creator: string;
 }
@@ -37,6 +38,7 @@ export default function ApiKeysPage() {
   const [createModal, setCreateModal] = useState(false);
   const [keyName, setKeyName] = useState("");
   const [keyEnv, setKeyEnv] = useState<"live" | "test">("live");
+  const [expiresIn, setExpiresIn] = useState<string>("never");
   const [scopes, setScopes] = useState<string[]>(["metrics:read", "events:write"]);
 
   // Secret Key Reveal Modal
@@ -94,6 +96,7 @@ export default function ApiKeysPage() {
           name: keyName.trim(),
           environment: keyEnv,
           scopes,
+          expiresIn,
         }),
       });
 
@@ -217,6 +220,7 @@ export default function ApiKeysPage() {
                 <th>Prefix</th>
                 <th>Scopes</th>
                 <th>Status</th>
+                <th>Expires</th>
                 <th>Last Used</th>
                 <th>Created By</th>
                 {canManage && <th style={{ textAlign: "right" }}>Actions</th>}
@@ -224,49 +228,74 @@ export default function ApiKeysPage() {
             </thead>
             <tbody>
               {keys.length > 0 ? (
-                keys.map((k) => (
-                  <tr key={k.id}>
-                    <td style={{ fontWeight: 600, color: "#fff" }}>{k.name}</td>
-                    <td>
-                      <span className="code-pill">{k.keyPrefix}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                        {k.scopes.map((s, i) => (
-                          <span key={i} className="badge badge-indigo" style={{ fontSize: "10px", padding: "1px 6px" }}>
-                            {s}
+                keys.map((k) => {
+                  const isExpired = !!k.expiresAt && new Date(k.expiresAt).getTime() < Date.now();
+                  const daysUntilExp = k.expiresAt
+                    ? Math.ceil((new Date(k.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                    : null;
+                  const isExpiringSoon = !isExpired && daysUntilExp !== null && daysUntilExp <= 7 && daysUntilExp >= 0;
+
+                  return (
+                    <tr key={k.id}>
+                      <td style={{ fontWeight: 600, color: "#fff" }}>{k.name}</td>
+                      <td>
+                        <span className="code-pill">{k.keyPrefix}</span>
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                          {k.scopes.map((s, i) => (
+                            <span key={i} className="badge badge-indigo" style={{ fontSize: "10px", padding: "1px 6px" }}>
+                              {s}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        {k.revoked ? (
+                          <span className="badge badge-danger">REVOKED</span>
+                        ) : isExpired ? (
+                          <span className="badge badge-danger">EXPIRED</span>
+                        ) : isExpiringSoon ? (
+                          <span className="badge badge-warning" title={`Key expires in ${daysUntilExp} days`}>
+                            EXPIRING SOON ({daysUntilExp}d)
                           </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`badge ${k.revoked ? "badge-danger" : "badge-success"}`}>
-                        {k.revoked ? "REVOKED" : "ACTIVE"}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: "12.5px" }}>
-                      {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString() : "Never used"}
-                    </td>
-                    <td style={{ fontSize: "12.5px" }}>{k.creator}</td>
-                    {canManage && (
-                      <td style={{ textAlign: "right" }}>
-                        {!k.revoked && (
-                          <button
-                            onClick={() => handleRevokeKey(k.id)}
-                            className="btn btn-danger btn-sm"
-                            style={{ padding: "4px 8px", fontSize: "12px" }}
-                            title="Revoke key immediately"
-                          >
-                            <Trash2 size={13} /> Revoke
-                          </button>
+                        ) : (
+                          <span className="badge badge-success">ACTIVE</span>
                         )}
                       </td>
-                    )}
-                  </tr>
-                ))
+                      <td style={{ fontSize: "12.5px" }}>
+                        {k.expiresAt ? (
+                          <span style={{ color: isExpired ? "#f87171" : isExpiringSoon ? "#fbbf24" : "var(--text-secondary)" }}>
+                            {new Date(k.expiresAt).toLocaleDateString()}
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--text-muted)" }}>Never</span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: "12.5px" }}>
+                        {k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleString() : "Never used"}
+                      </td>
+                      <td style={{ fontSize: "12.5px" }}>{k.creator}</td>
+                      {canManage && (
+                        <td style={{ textAlign: "right" }}>
+                          {!k.revoked && (
+                            <button
+                              onClick={() => handleRevokeKey(k.id)}
+                              className="btn btn-danger btn-sm"
+                              style={{ padding: "4px 8px", fontSize: "12px" }}
+                              title="Revoke key immediately"
+                            >
+                              <Trash2 size={13} /> Revoke
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               ) : (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", padding: "30px", color: "var(--text-muted)" }}>
+                  <td colSpan={8} style={{ textAlign: "center", padding: "30px", color: "var(--text-muted)" }}>
                     No API keys have been provisioned yet.
                   </td>
                 </tr>
@@ -446,6 +475,22 @@ export default function ApiKeysPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="keyExp">Key Expiration & Auto-Rotation</label>
+                <select
+                  id="keyExp"
+                  value={expiresIn}
+                  onChange={(e) => setExpiresIn(e.target.value)}
+                  className="form-input"
+                  style={{ fontSize: "13px" }}
+                >
+                  <option value="never">Never Expire (Static Service Token)</option>
+                  <option value="30d">30 Days (Recommended for CI/CD & Ephemeral workers)</option>
+                  <option value="90d">90 Days (Quarterly rotation compliance)</option>
+                  <option value="1y">1 Year (Annual rotation policy)</option>
+                </select>
               </div>
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
