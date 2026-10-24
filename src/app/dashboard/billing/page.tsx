@@ -68,6 +68,28 @@ export default function BillingPage() {
     }
   };
 
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleCancelSubscription = async () => {
+    if (!activeWorkspace || !confirm("Are you sure you want to schedule this subscription for cancellation at the end of the current billing period?")) return;
+    setCancelling(true);
+    try {
+      const res = await fetch(`/api/workspaces/${activeWorkspace.id}/billing/cancel`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage(data.message || "Subscription scheduled for cancellation at period end.");
+        await fetchBilling();
+        await refreshUserData();
+      } else {
+        alert(data.error || "Failed to cancel subscription");
+      }
+    } catch {
+      alert("Network error cancelling subscription");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const handleDownloadInvoice = (invNum: string) => {
     alert(`Downloading receipt for invoice ${invNum}...`);
   };
@@ -177,18 +199,32 @@ export default function BillingPage() {
                   ))}
                 </div>
 
-                <button
-                  onClick={() => handleSelectPlan(p.id)}
-                  disabled={isCurrent || upgradingPlan !== null}
-                  className={`btn ${isCurrent ? "btn-secondary" : "btn-primary"} btn-sm`}
-                  style={{ width: "100%" }}
-                >
-                  {isCurrent
-                    ? "Current Active Plan"
-                    : upgradingPlan === p.id
-                    ? "Upgrading..."
-                    : `Switch to ${p.id}`}
-                </button>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <button
+                    onClick={() => handleSelectPlan(p.id)}
+                    disabled={isCurrent || upgradingPlan !== null}
+                    className={`btn ${isCurrent ? "btn-secondary" : "btn-primary"} btn-sm`}
+                    style={{ width: "100%" }}
+                  >
+                    {isCurrent
+                      ? "Current Active Plan"
+                      : upgradingPlan === p.id
+                      ? "Upgrading..."
+                      : `Switch to ${p.id}`}
+                  </button>
+
+                  {isCurrent && p.id !== "STARTER" && (
+                    <button
+                      type="button"
+                      onClick={handleCancelSubscription}
+                      disabled={cancelling}
+                      className="btn btn-secondary btn-sm"
+                      style={{ width: "100%", fontSize: "11px", color: "var(--text-muted)", borderColor: "rgba(255,255,255,0.06)" }}
+                    >
+                      {cancelling ? "Scheduling..." : "Cancel at Period End"}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}

@@ -2,9 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { comparePassword, signToken, COOKIE_NAME } from "@/lib/auth";
 import { recordAuditLog } from "@/lib/audit";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const rl = checkRateLimit(`login_${ip}`, { limit: 25, windowMs: 60000 });
+    if (!rl.success) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Please try again later." },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": Math.ceil(rl.resetMs / 1000).toString(),
+            "X-RateLimit-Limit": rl.limit.toString(),
+            "X-RateLimit-Remaining": "0",
+          },
+        }
+      );
+    }
+
     const body = await req.json();
     const { email, password } = body;
 
@@ -85,6 +102,9 @@ export async function POST(req: NextRequest) {
       maxAge: 60 * 60 * 24 * 7, // 7 days
       path: "/",
     });
+
+    response.headers.set("X-RateLimit-Limit", rl.limit.toString());
+    response.headers.set("X-RateLimit-Remaining", rl.remaining.toString());
 
     return response;
   } catch (error) {

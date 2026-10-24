@@ -22,6 +22,7 @@ model User {
   orgMemberships OrganizationMembership[]
   createdKeys    ApiKey[]
   auditLogs      AuditLog[]
+  notifications  Notification[]
 }
 
 model Workspace {
@@ -43,6 +44,9 @@ model Workspace {
   auditLogs           AuditLog[]
   webhooks            Webhook[]
   invitations         Invitation[]
+  notifications       Notification[]
+  subscription        Subscription?
+  usageRecords        UsageRecord[]
 
   organizationId      String?
   organization        Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
@@ -78,6 +82,9 @@ model ApiKey {
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([keyPrefix])
+  @@index([workspaceId, revoked])
 }
 
 model MetricEvent {
@@ -92,6 +99,9 @@ model MetricEvent {
   timestamp   DateTime  @default(now())
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, timestamp])
+  @@index([workspaceId, statusCode])
 }
 
 model Invoice {
@@ -107,6 +117,8 @@ model Invoice {
   createdAt     DateTime  @default(now())
 
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
 }
 
 model AuditLog {
@@ -121,6 +133,9 @@ model AuditLog {
 
   workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model Webhook {
@@ -197,4 +212,54 @@ model PasswordResetToken {
 
   @@index([token])
   @@index([email])
+}
+
+model Notification {
+  id          String     @id @default(cuid())
+  workspaceId String
+  userId      String?
+  title       String
+  message     String
+  type        String     @default("INFO") // INFO, SUCCESS, WARNING, CRITICAL, BILLING
+  read        Boolean    @default(false)
+  link        String?
+  createdAt   DateTime   @default(now())
+
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, read])
+  @@index([userId, read])
+}
+
+model Subscription {
+  id                   String    @id @default(cuid())
+  workspaceId          String    @unique
+  tier                 String    @default("STARTER") // STARTER, PRO, ENTERPRISE
+  billingCycle         String    @default("MONTHLY") // MONTHLY, ANNUAL
+  status               String    @default("ACTIVE") // ACTIVE, PAST_DUE, CANCELED, TRIALING
+  currentPeriodStart   DateTime  @default(now())
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean   @default(false)
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model UsageRecord {
+  id          String    @id @default(cuid())
+  workspaceId String
+  date        DateTime
+  totalEvents Int       @default(0)
+  errorsCount Int       @default(0)
+  avgLatency  Float     @default(0)
+  createdAt   DateTime  @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, date])
+  @@index([workspaceId, date])
 }

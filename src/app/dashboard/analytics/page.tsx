@@ -22,6 +22,7 @@ import {
 export default function AnalyticsPage() {
   const { activeWorkspace } = useDashboard();
   const [data, setData] = useState<any>(null);
+  const [overview, setOverview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState("7d");
   const [searchTerm, setSearchTerm] = useState("");
@@ -42,10 +43,17 @@ export default function AnalyticsPage() {
   const fetchAnalytics = async () => {
     if (!activeWorkspace) return;
     try {
-      const res = await fetch(`/api/workspaces/${activeWorkspace.id}/metrics?range=${range}`);
+      const [res, ovRes] = await Promise.all([
+        fetch(`/api/workspaces/${activeWorkspace.id}/metrics?range=${range}`),
+        fetch(`/api/workspaces/${activeWorkspace.id}/analytics/overview`),
+      ]);
       if (res.ok) {
         const json = await res.json();
         setData(json);
+      }
+      if (ovRes.ok) {
+        const ovJson = await ovRes.json();
+        setOverview(ovJson);
       }
     } catch (err) {
       console.error(err);
@@ -198,19 +206,19 @@ export default function AnalyticsPage() {
             <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
               <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p50 (Median)</div>
               <div style={{ fontSize: "22px", fontWeight: 700, color: "#34d399" }}>
-                {data?.overview?.avgLatency ? Math.max(14, Math.round(data.overview.avgLatency * 0.7)) : 0}ms
+                {overview?.kpis?.p50LatencyMs || 0}ms
               </div>
             </div>
             <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
               <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p95</div>
               <div style={{ fontSize: "22px", fontWeight: 700, color: "#38bdf8" }}>
-                {data?.overview?.avgLatency ? Math.round(data.overview.avgLatency * 1.6) : 0}ms
+                {overview?.kpis?.p95LatencyMs || 0}ms
               </div>
             </div>
             <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
               <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p99</div>
               <div style={{ fontSize: "22px", fontWeight: 700, color: "#f87171" }}>
-                {data?.overview?.avgLatency ? Math.round(data.overview.avgLatency * 2.8) : 0}ms
+                {overview?.kpis?.p99LatencyMs || 0}ms
               </div>
             </div>
           </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
@@ -61,6 +62,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Rate Limiting Check (120 requests/minute per active API key)
+    const rl = checkRateLimit(`ingest_${matchedKey.id}`, { limit: 120, windowMs: 60000 });
+    if (!rl.success) {
+      return NextResponse.json(
+        {
+          error: "Rate Limit Exceeded",
+          message: "Exceeded limit of 120 ingest requests per minute. Back off before retrying.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": Math.ceil(rl.resetMs / 1000).toString(),
+            "X-RateLimit-Limit": rl.limit.toString(),
+            "X-RateLimit-Remaining": "0",
+          },
+        }
+      );
+    }
+
     const workspace = matchedKey.workspace;
 
     // 3. Check Quota / Rate Limiting
@@ -82,7 +102,10 @@ export async function POST(req: NextRequest) {
     const source = body.source || req.headers.get("user-agent") || "external-client";
     const latencyMs = Math.max(4, Date.now() - startTime);
 
-    // 5. Persist MetricEvent and increment workspace usage
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    // 5. Persist MetricEvent, increment workspace usage, and update usage record
     const [event] = await prisma.$transaction([
       prisma.metricEvent.create({
         data: {
@@ -103,9 +126,27 @@ export async function POST(req: NextRequest) {
         where: { id: matchedKey.id },
         data: { lastUsedAt: new Date() },
       }),
+      prisma.usageRecord.upsert({
+        where: {
+          workspaceId_date: {
+            workspaceId: workspace.id,
+            date: today,
+          },
+        },
+        create: {
+          workspaceId: workspace.id,
+          date: today,
+          totalEvents: 1,
+          errorsCount: 0,
+          avgLatency: latencyMs,
+        },
+        update: {
+          totalEvents: { increment: 1 },
+        },
+      }),
     ]);
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         success: true,
         eventId: event.id,
@@ -121,6 +162,11 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 }
     );
+
+    response.headers.set("X-RateLimit-Limit", rl.limit.toString());
+    response.headers.set("X-RateLimit-Remaining", rl.remaining.toString());
+
+    return response;
   } catch (error) {
     console.error("Ingest API error:", error);
     return NextResponse.json(

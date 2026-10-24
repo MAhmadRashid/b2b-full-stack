@@ -21,7 +21,19 @@ import {
   Sparkles,
   Building,
   AlertTriangle,
+  Bell,
+  Check,
 } from "lucide-react";
+
+interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  createdAt: string;
+}
 
 interface WorkspaceInfo {
   id: string;
@@ -88,6 +100,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [testEventToast, setTestEventToast] = useState<string | null>(null);
   const [sendingVerification, setSendingVerification] = useState(false);
   const [verificationSentMessage, setVerificationSentMessage] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+  const [showNotifsDropdown, setShowNotifsDropdown] = useState(false);
+
+  const fetchNotifications = async (wsId?: string) => {
+    const targetId = wsId || activeWorkspaceId;
+    if (!targetId) return;
+    try {
+      const res = await fetch(`/api/workspaces/${targetId}/notifications`);
+      if (res.ok) {
+        const data = await res.json();
+        setNotifications(data.notifications || []);
+        setUnreadNotifsCount(data.unreadCount || 0);
+      }
+    } catch {
+      // Fail silently
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    if (!activeWorkspaceId) return;
+    try {
+      const res = await fetch(`/api/workspaces/${activeWorkspaceId}/notifications`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markAllRead: true }),
+      });
+      if (res.ok) {
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        setUnreadNotifsCount(0);
+      }
+    } catch {
+      // Fail silently
+    }
+  };
 
   const fetchSession = async () => {
     try {
@@ -142,6 +189,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setActiveWorkspaceId(id);
     localStorage.setItem("pulseflow_active_ws", id);
     setWorkspaceMenuOpen(false);
+    fetchNotifications(id);
   };
 
   const handleLogout = async () => {
@@ -526,6 +574,128 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Send size={13} color="#06b6d4" />
                 <span>Simulate Ingest</span>
               </button>
+
+              {/* Live Notifications Bell & Dropdown */}
+              <div style={{ position: "relative" }}>
+                <button
+                  onClick={() => {
+                    setShowNotifsDropdown(!showNotifsDropdown);
+                    if (!showNotifsDropdown) fetchNotifications();
+                  }}
+                  className="btn btn-secondary btn-sm"
+                  style={{ position: "relative", padding: "7px 10px" }}
+                  title="Notifications & Alerts"
+                >
+                  <Bell size={15} color={unreadNotifsCount > 0 ? "#f59e0b" : "var(--text-secondary)"} />
+                  {unreadNotifsCount > 0 && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: "-4px",
+                        right: "-4px",
+                        width: "18px",
+                        height: "18px",
+                        borderRadius: "50%",
+                        background: "#ef4444",
+                        color: "#fff",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {unreadNotifsCount > 9 ? "9+" : unreadNotifsCount}
+                    </span>
+                  )}
+                </button>
+
+                {showNotifsDropdown && (
+                  <div
+                    className="glass-card"
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      right: 0,
+                      width: "360px",
+                      zIndex: 100,
+                      padding: "16px",
+                      boxShadow: "0 16px 36px rgba(0,0,0,0.8)",
+                      border: "1px solid var(--border-medium)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        marginBottom: "12px",
+                        paddingBottom: "8px",
+                        borderBottom: "1px solid var(--border-subtle)",
+                      }}
+                    >
+                      <div style={{ fontSize: "14px", fontWeight: 700 }}>Notifications</div>
+                      {unreadNotifsCount > 0 && (
+                        <button
+                          onClick={handleMarkAllNotificationsRead}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            color: "var(--accent-indigo)",
+                            fontSize: "11px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+
+                    <div style={{ maxHeight: "320px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+                      {notifications.length > 0 ? (
+                        notifications.map((n) => (
+                          <div
+                            key={n.id}
+                            style={{
+                              padding: "10px",
+                              borderRadius: "6px",
+                              background: n.read ? "rgba(255, 255, 255, 0.02)" : "rgba(99, 102, 241, 0.1)",
+                              border: n.read ? "1px solid transparent" : "1px solid rgba(99, 102, 241, 0.3)",
+                              fontSize: "12px",
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px" }}>
+                              <span style={{ fontWeight: 600, color: n.read ? "var(--text-secondary)" : "#fff" }}>
+                                {n.title}
+                              </span>
+                              <span
+                                className={`badge ${
+                                  n.type === "WARNING"
+                                    ? "badge-warning"
+                                    : n.type === "BILLING"
+                                    ? "badge-indigo"
+                                    : "badge-neutral"
+                                }`}
+                                style={{ fontSize: "9px", padding: "1px 6px" }}
+                              >
+                                {n.type}
+                              </span>
+                            </div>
+                            <p style={{ color: "var(--text-muted)", margin: 0, lineHeight: 1.4 }}>{n.message}</p>
+                            <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "6px" }}>
+                              {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)", fontSize: "12.5px" }}>
+                          No notifications yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </header>
 

@@ -24,6 +24,10 @@ import {
   Activity,
   X,
   XCircle,
+  User,
+  Lock,
+  ShieldCheck,
+  Mail,
 } from "lucide-react";
 
 interface WebhookItem {
@@ -56,8 +60,8 @@ const AVAILABLE_EVENTS = [
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { activeWorkspace, refreshUserData } = useDashboard();
-  const [activeTab, setActiveTab] = useState<"general" | "webhooks">("general");
+  const { user, activeWorkspace, refreshUserData } = useDashboard();
+  const [activeTab, setActiveTab] = useState<"general" | "webhooks" | "profile">("general");
 
   // General settings state
   const [workspaceName, setWorkspaceName] = useState("");
@@ -65,6 +69,27 @@ export default function SettingsPage() {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [auditSearch, setAuditSearch] = useState("");
   const [loadingLogs, setLoadingLogs] = useState(true);
+
+  // User profile state
+  const [profileName, setProfileName] = useState("");
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState("");
+  const [userStats, setUserStats] = useState<{
+    workspacesCount: number;
+    organizationsCount: number;
+    apiKeysCount: number;
+  } | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Password change state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   // Webhooks state
   const [webhooks, setWebhooks] = useState<WebhookItem[]>([]);
@@ -96,6 +121,105 @@ export default function SettingsPage() {
       fetchWebhooks();
     }
   }, [activeWorkspace?.id]);
+
+  useEffect(() => {
+    if (activeTab === "profile" || user) {
+      fetchUserProfile();
+    }
+  }, [activeTab, user?.id]);
+
+  const fetchUserProfile = async () => {
+    try {
+      setProfileLoading(true);
+      const res = await fetch("/api/users/profile");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          setProfileName(data.user.name || "");
+          setProfileAvatarUrl(data.user.avatarUrl || "");
+          setUserStats(data.user.stats || null);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load user profile:", err);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileSaving(true);
+    setProfileError(null);
+    setProfileSuccess(null);
+
+    try {
+      const res = await fetch("/api/users/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: profileName,
+          avatarUrl: profileAvatarUrl,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setProfileError(data.error || "Failed to update profile");
+      } else {
+        setProfileSuccess("Profile updated successfully!");
+        refreshUserData();
+        setTimeout(() => setProfileSuccess(null), 4000);
+      }
+    } catch {
+      setProfileError("Network error while updating profile");
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError("New password must be at least 8 characters long");
+      return;
+    }
+
+    setPasswordSaving(true);
+    try {
+      const res = await fetch("/api/users/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setPasswordError(data.error || "Failed to change password");
+      } else {
+        setPasswordSuccess("Password updated successfully!");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+        setTimeout(() => setPasswordSuccess(null), 4000);
+      }
+    } catch {
+      setPasswordError("Network error while updating password");
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
 
   const fetchAuditLogs = async () => {
     if (!activeWorkspace) return;
@@ -362,6 +486,15 @@ export default function SettingsPage() {
           >
             {webhooks.length}
           </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("profile")}
+          className={`btn ${activeTab === "profile" ? "btn-primary" : "btn-secondary"} btn-sm`}
+          style={{ display: "flex", alignItems: "center", gap: "8px" }}
+        >
+          <User size={15} /> My Profile & Security
         </button>
       </div>
 
@@ -950,6 +1083,333 @@ export default function SettingsPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* TAB 3: PROFILE & SECURITY */}
+      {activeTab === "profile" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+          {/* User Account Stats Overview */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "16px",
+            }}
+          >
+            <div className="glass-card" style={{ padding: "18px 20px" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>
+                Workspaces
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 700, color: "#f8fafc" }}>
+                {userStats?.workspacesCount ?? 1}
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                Active memberships
+              </div>
+            </div>
+
+            <div className="glass-card" style={{ padding: "18px 20px" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>
+                Organizations
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 700, color: "#f8fafc" }}>
+                {userStats?.organizationsCount ?? 1}
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                Tenant affiliations
+              </div>
+            </div>
+
+            <div className="glass-card" style={{ padding: "18px 20px" }}>
+              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>
+                API Keys Managed
+              </div>
+              <div style={{ fontSize: "24px", fontWeight: 700, color: "#f8fafc" }}>
+                {userStats?.apiKeysCount ?? 0}
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                Tokens created
+              </div>
+            </div>
+          </div>
+
+          {/* Profile Details Card */}
+          <div className="glass-card" style={{ padding: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
+              <div>
+                <h3 style={{ fontSize: "18px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <User size={18} color="#6366f1" /> Personal Profile
+                </h3>
+                <p style={{ color: "var(--text-secondary)", fontSize: "13.5px", marginTop: "4px" }}>
+                  Manage your public profile identity, contact credentials, and avatar
+                </p>
+              </div>
+
+              {user?.emailVerified ? (
+                <span className="badge badge-emerald" style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                  <ShieldCheck size={13} /> Email Verified
+                </span>
+              ) : (
+                <span className="badge badge-amber" style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                  <AlertTriangle size={13} /> Unverified Email
+                </span>
+              )}
+            </div>
+
+            {profileSuccess && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "12px 16px",
+                  background: "rgba(16, 185, 129, 0.12)",
+                  border: "1px solid rgba(16, 185, 129, 0.3)",
+                  borderRadius: "8px",
+                  color: "#34d399",
+                  fontSize: "13.5px",
+                  marginBottom: "16px",
+                }}
+              >
+                <CheckCircle2 size={16} />
+                <span>{profileSuccess}</span>
+              </div>
+            )}
+
+            {profileError && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "12px 16px",
+                  background: "rgba(239, 68, 68, 0.12)",
+                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                  borderRadius: "8px",
+                  color: "#fca5a5",
+                  fontSize: "13.5px",
+                  marginBottom: "16px",
+                }}
+              >
+                <AlertTriangle size={16} />
+                <span>{profileError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveProfile}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                <div className="form-group">
+                  <label className="form-label" htmlFor="userEmail">
+                    Email Address (Immutable)
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      id="userEmail"
+                      type="email"
+                      disabled
+                      value={user?.email || ""}
+                      className="form-input"
+                      style={{ opacity: 0.7, cursor: "not-allowed", paddingLeft: "36px" }}
+                    />
+                    <Mail
+                      size={15}
+                      style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)" }}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="userName">
+                    Full Name *
+                  </label>
+                  <input
+                    id="userName"
+                    type="text"
+                    required
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    className="form-input"
+                    placeholder="Jane Doe"
+                  />
+                </div>
+
+                <div className="form-group" style={{ gridColumn: "1 / -1" }}>
+                  <label className="form-label" htmlFor="userAvatar">
+                    Avatar Image URL (Optional)
+                  </label>
+                  <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                    <div
+                      style={{
+                        width: "44px",
+                        height: "44px",
+                        borderRadius: "50%",
+                        background: profileAvatarUrl
+                          ? `url(${profileAvatarUrl}) center/cover no-repeat`
+                          : "linear-gradient(135deg, #6366f1, #06b6d4)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "16px",
+                        fontWeight: 700,
+                        color: "#fff",
+                        border: "2px solid rgba(255, 255, 255, 0.1)",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {!profileAvatarUrl && (profileName ? profileName.slice(0, 2).toUpperCase() : "U")}
+                    </div>
+                    <input
+                      id="userAvatar"
+                      type="url"
+                      value={profileAvatarUrl}
+                      onChange={(e) => setProfileAvatarUrl(e.target.value)}
+                      className="form-input mono"
+                      placeholder="https://example.com/avatar.jpg"
+                      style={{ flex: 1 }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="btn btn-primary btn-sm"
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  <Save size={15} />
+                  <span>{profileSaving ? "Saving Changes..." : "Save Profile"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Password & Security Card */}
+          <div className="glass-card" style={{ padding: "24px" }}>
+            <h3 style={{ fontSize: "18px", display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <Lock size={18} color="#f59e0b" /> Change Password
+            </h3>
+            <p style={{ color: "var(--text-secondary)", fontSize: "13.5px", marginBottom: "20px" }}>
+              Secure your account by updating your login password. Must be at least 8 characters.
+            </p>
+
+            {passwordSuccess && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "12px 16px",
+                  background: "rgba(16, 185, 129, 0.12)",
+                  border: "1px solid rgba(16, 185, 129, 0.3)",
+                  borderRadius: "8px",
+                  color: "#34d399",
+                  fontSize: "13.5px",
+                  marginBottom: "16px",
+                }}
+              >
+                <CheckCircle2 size={16} />
+                <span>{passwordSuccess}</span>
+              </div>
+            )}
+
+            {passwordError && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "12px 16px",
+                  background: "rgba(239, 68, 68, 0.12)",
+                  border: "1px solid rgba(239, 68, 68, 0.3)",
+                  borderRadius: "8px",
+                  color: "#fca5a5",
+                  fontSize: "13.5px",
+                  marginBottom: "16px",
+                }}
+              >
+                <AlertTriangle size={16} />
+                <span>{passwordError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleUpdatePassword}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                <div className="form-group">
+                  <label className="form-label" htmlFor="currentPassword">
+                    Current Password *
+                  </label>
+                  <input
+                    id="currentPassword"
+                    type="password"
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    className="form-input"
+                    placeholder="••••••••"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="newPassword">
+                    New Password (Min 8 chars) *
+                  </label>
+                  <input
+                    id="newPassword"
+                    type="password"
+                    required
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="form-input"
+                    placeholder="••••••••"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="confirmPassword">
+                    Confirm New Password *
+                  </label>
+                  <input
+                    id="confirmPassword"
+                    type="password"
+                    required
+                    minLength={8}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="form-input"
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="submit"
+                  disabled={passwordSaving}
+                  className="btn btn-secondary btn-sm"
+                  style={{ display: "flex", alignItems: "center", gap: "8px" }}
+                >
+                  <Lock size={15} />
+                  <span>{passwordSaving ? "Updating Password..." : "Update Password"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

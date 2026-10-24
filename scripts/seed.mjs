@@ -7,6 +7,9 @@ async function main() {
   console.log("Seeding database...");
 
   // Clear existing data in reverse order of relationships
+  await prisma.notification.deleteMany({});
+  await prisma.usageRecord.deleteMany({});
+  await prisma.subscription.deleteMany({});
   await prisma.auditLog.deleteMany({});
   await prisma.invoice.deleteMany({});
   await prisma.metricEvent.deleteMany({});
@@ -270,10 +273,93 @@ async function main() {
         userEmail: demoUser.email,
         action: "USER_AUTHENTICATION",
         details: "Successful login via session cookie from IP 192.168.1.1",
-        createdAt: new Date(Date.now() - 1000 * 60 * 15),
       },
     ],
   });
+
+  // 8. Seed Subscriptions
+  await prisma.subscription.create({
+    data: {
+      workspaceId: acmeWorkspace.id,
+      tier: "PRO",
+      billingCycle: "MONTHLY",
+      status: "ACTIVE",
+      currentPeriodStart: new Date(Date.now() - 1000 * 60 * 60 * 24 * 12),
+      currentPeriodEnd: new Date(Date.now() + 1000 * 60 * 60 * 24 * 18),
+      cancelAtPeriodEnd: false,
+      stripeCustomerId: "cus_demo_acme123",
+      stripeSubscriptionId: "sub_demo_acme456",
+    },
+  });
+
+  await prisma.subscription.create({
+    data: {
+      workspaceId: starlightWorkspace.id,
+      tier: "ENTERPRISE",
+      billingCycle: "ANNUAL",
+      status: "ACTIVE",
+      currentPeriodStart: new Date(Date.now() - 1000 * 60 * 60 * 24 * 60),
+      currentPeriodEnd: new Date(Date.now() + 1000 * 60 * 60 * 24 * 305),
+      cancelAtPeriodEnd: false,
+      stripeCustomerId: "cus_demo_starlight123",
+      stripeSubscriptionId: "sub_demo_starlight456",
+    },
+  });
+
+  // 9. Seed Notifications
+  await prisma.notification.createMany({
+    data: [
+      {
+        workspaceId: acmeWorkspace.id,
+        userId: demoUser.id,
+        title: "Monthly Ingestion Quota at 67%",
+        message: "Acme Corp Cloud has ingested 168,420 of 250,000 telemetry events this cycle.",
+        type: "WARNING",
+        read: false,
+        link: "/dashboard/billing",
+      },
+      {
+        workspaceId: acmeWorkspace.id,
+        userId: demoUser.id,
+        title: "New Team Member Onboarded",
+        message: "Marcus Vance accepted the invitation to join as workspace ADMIN.",
+        type: "SUCCESS",
+        read: true,
+        link: "/dashboard/team",
+      },
+      {
+        workspaceId: acmeWorkspace.id,
+        userId: demoUser.id,
+        title: "Invoice Paid Successfully",
+        message: "Invoice INV-2026-8491 for $99.00 USD has been settled.",
+        type: "BILLING",
+        read: true,
+        link: "/dashboard/billing",
+      },
+    ],
+  });
+
+  // 10. Seed Usage Records (Last 7 Days)
+  const currentDate = new Date();
+  const usageData = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(currentDate);
+    d.setUTCDate(d.getUTCDate() - i);
+    d.setUTCHours(0, 0, 0, 0);
+
+    const baseEvents = 20000 + Math.floor(Math.random() * 8000);
+    const errors = Math.floor(baseEvents * 0.015);
+    const latency = 28 + Math.floor(Math.random() * 14);
+
+    usageData.push({
+      workspaceId: acmeWorkspace.id,
+      date: d,
+      totalEvents: baseEvents,
+      errorsCount: errors,
+      avgLatency: latency,
+    });
+  }
+  await prisma.usageRecord.createMany({ data: usageData });
 
   console.log("Database seeded successfully!");
   console.log("Test Accounts created:");
