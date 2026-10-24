@@ -1,0 +1,63 @@
+{
+  "project": "PulseFlow Enterprise SaaS",
+  "branchName": "ralph/observability-expansion",
+  "description": "Extend PulseFlow with outbound webhook dispatchers, telemetry data exports, key auto-rotation policies, and invitation token verification.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Outbound Webhooks Delivery Engine",
+      "description": "As a workspace administrator, I want to configure outbound webhook HTTP endpoints so that third-party systems receive automated POST notifications when error spikes or latency thresholds are breached.",
+      "acceptanceCriteria": [
+        "Add Webhook model to schema.prisma (id, workspaceId, url, secretKey, events, active, createdAt)",
+        "Implement GET and POST /api/workspaces/[id]/webhooks route handlers",
+        "Add Webhooks management tab or section to Workspace Settings with test delivery ping",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Ensure webhook secrets are generated with crypto.randomBytes and requests are sent with X-PulseFlow-Signature header."
+    },
+    {
+      "id": "US-002",
+      "title": "Telemetry Raw Data Exporter (CSV/JSON)",
+      "description": "As an engineering analyst, I want to export raw metric events from the analytics dashboard in CSV or JSON format for external BI analysis.",
+      "acceptanceCriteria": [
+        "Create GET /api/workspaces/[id]/metrics/export endpoint supporting format=csv and format=json",
+        "Add 'Export Raw Telemetry' button with dropdown on the Analytics page",
+        "Include timestamp, eventType, source, statusCode, latencyMs, and payload in export",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Stream or paginate large datasets to avoid memory exhaustion."
+    },
+    {
+      "id": "US-003",
+      "title": "API Key Expiration & Rotation Safeguards",
+      "description": "As a security officer, I want API keys to support optional expiration dates (30d, 90d, 1yr) and display warning badges when expiration is within 7 days.",
+      "acceptanceCriteria": [
+        "Update API key generation modal to include expiration duration picker",
+        "Enforce expiration check in /api/v1/ingest (reject expired keys with 401 Expired)",
+        "Display amber warning badge on keys list for tokens expiring within 7 days",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Verify time comparisons take UTC into account."
+    },
+    {
+      "id": "US-004",
+      "title": "Workspace Invitation Acceptance Flow",
+      "description": "As an invited team member, I want to accept an email invitation via a unique token link so that I can set my password and join the workspace.",
+      "acceptanceCriteria": [
+        "Create /invite/[token] onboarding page",
+        "Verify invitation token against database and activate membership",
+        "Redirect authenticated member directly to the workspace dashboard upon completion",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Clean up pending invitation record once membership is confirmed."
+    }
+  ]
+}

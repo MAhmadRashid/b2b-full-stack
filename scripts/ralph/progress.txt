@@ -1,0 +1,53 @@
+# Ralph Progress Log
+
+## Codebase Patterns
+- **Architecture**: Next.js 15 App Router with TypeScript (strict mode) and React 19.
+- **Styling**: Vanilla CSS Design System in `src/app/globals.css`. Uses cyber-obsidian tokens (`--bg-main: #07090e`, `--accent-gradient`, etc.). Do NOT use Tailwind unless explicitly requested.
+- **Database**: SQLite with Prisma Client singleton in `src/lib/prisma.ts`. Run `npx prisma db push` if schema changes.
+- **Authentication**: JWT tokens stored in HTTP-Only cookies (`pulseflow_session`) via `src/lib/auth.ts`.
+- **Authorization (RBAC)**: Zero-trust hierarchy (`OWNER` > `ADMIN` > `MEMBER` > `VIEWER`) in `src/lib/rbac.ts`. Always verify permissions on server route handlers.
+- **Public API Gateway**: `POST /api/v1/ingest` validates Bearer API keys (`pfl_live_*`) using `bcryptjs` against `ApiKey.hashedKey` and tracks monthly quota limits.
+- **Quality Checks**: Run `npx tsc --noEmit` before declaring any story complete.
+- **Webhooks**: Sign outbound payloads with HMAC-SHA256 (`crypto.createHmac('sha256', secretKey)`), dispatch in `X-PulseFlow-Signature` header, and record audit trail via `recordAuditLog`.
+- **TypeScript / CLI**: Exclude sub-projects (`ralph`) in `tsconfig.json`. On Windows, invoke node scripts or CLI tools via `cmd /c npx ...` to bypass execution policy blocks.
+
+---
+
+## 2026-10-23 - US-000 [Foundation & Full-Stack Platform Core]
+- **What was implemented**:
+  - Full B2B SaaS platform initialized: Landing page, Authentication (`/login`, `/register`), Dashboard shell, Metrics Overview, Deep-dive Analytics, API Keys & Live Sandbox, Team RBAC, Billing & Invoices, Workspace Settings with Audit Logs, and Superadmin Control Panel.
+  - SQLite database seeded with demo accounts: `demo@acmecorp.com`, `admin@pulseflow.io`, `dev@acmecorp.com`.
+  - Public telemetry ingestion gateway (`/api/v1/ingest`) and health check (`/api/health`).
+- **Files changed**:
+  - `package.json`, `tsconfig.json`, `next.config.ts`, `globals.css`
+  - `prisma/schema.prisma`, `scripts/seed.mjs`
+  - `src/lib/prisma.ts`, `src/lib/auth.ts`, `src/lib/rbac.ts`, `src/lib/audit.ts`
+  - `src/app/page.tsx`, `src/app/layout.tsx`, `src/app/login/page.tsx`, `src/app/register/page.tsx`
+  - `src/app/dashboard/*`, `src/app/api/*`
+- **Learnings for future iterations**:
+  - PowerShell wildcard parsing: Workspace path has brackets (`Ahmad new]`), always use `-LiteralPath` in PowerShell or relative node scripts to avoid regex bracket errors.
+  - React 19 and Next.js 15: viewport metadata must be exported as a dedicated `Viewport` object rather than inside `Metadata`.
+  - All interactive elements must execute real server-side persistence and return typed JSON.
+---
+
+## 2026-10-24 - US-001 [Outbound Webhooks Delivery Engine]
+Thread: local/ralph/us-001
+- **What was implemented**:
+  - Added `Webhook` model to Prisma schema (`id`, `workspaceId`, `url`, `secretKey`, `events`, `active`, `createdAt`) with relation to `Workspace` and pushed schema to SQLite.
+  - Created `/api/workspaces/[id]/webhooks` route handlers supporting GET (list), POST (create or test action), PATCH (toggle active/events), and DELETE.
+  - Created dedicated `/api/workspaces/[id]/webhooks/test` endpoint calculating HMAC-SHA256 signatures, dispatching HTTP POST with `X-PulseFlow-Signature`, measuring roundtrip latency, and capturing remote response snippets.
+  - Added Outbound Webhooks management tab to Workspace Settings (`src/app/dashboard/settings/page.tsx`) with endpoint registration modal, signing secret reveal & copy to clipboard, status toggle, delete, and test delivery diagnostic modal.
+  - Verified full end-to-end integration flow via automated HTTP tests (create -> test ping -> patch -> delete -> audit log verification).
+- **Files changed**:
+  - `prisma/schema.prisma`
+  - `tsconfig.json`
+  - `src/app/api/workspaces/[id]/webhooks/route.ts`
+  - `src/app/api/workspaces/[id]/webhooks/test/route.ts`
+  - `src/app/dashboard/settings/page.tsx`
+  - `scripts/ralph/prd.json`
+  - `scripts/ralph/progress.txt`
+- **Learnings for future iterations**:
+  - Sub-projects: `tsconfig.json` must exclude non-root projects like `ralph/flowchart` to keep `tsc` typechecking clean.
+  - Webhooks payload signing: always format test payloads with deterministic JSON stringification before HMAC digest calculation to avoid signature mismatch.
+  - Audit logging: always log `WEBHOOK_CREATED`, `WEBHOOK_UPDATED`, `WEBHOOK_DELETED`, and `WEBHOOK_TEST_DELIVERY` for complete enterprise compliance.
+---

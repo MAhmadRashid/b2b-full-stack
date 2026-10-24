@@ -1,0 +1,34 @@
+{
+  "name": "pulse-saas-platform",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:seed": "node scripts/seed.mjs",
+    "ralph": "powershell -ExecutionPolicy Bypass -File ./scripts/ralph/ralph.ps1",
+    "ralph:dry": "powershell -ExecutionPolicy Bypass -File ./scripts/ralph/ralph.ps1 -DryRun"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.3.1",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^1.16.0",
+    "next": "^15.1.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.8",
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "prisma": "^6.3.1",
+    "typescript": "^5.7.3"
+  }
+}
