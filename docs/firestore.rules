@@ -1,0 +1,69 @@
+// Firestore Security Rules (for projects deploying on Firebase Firestore)
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.systemRole == 'SUPERADMIN' ||
+         request.auth.token.admin == true);
+    }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() &&
+        (isSuperAdmin() ||
+         exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)));
+    }
+
+    function isWorkspaceMember(workspaceId) {
+      return isAuthenticated() &&
+        (isSuperAdmin() ||
+         exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)));
+    }
+
+    // 1. Raw Analytics Events Collection
+    match /analyticsEvents/{eventId} {
+      // Allow anonymous client and authenticated app to record validated events
+      allow create: if request.resource.data.sessionId is string
+                    && request.resource.data.eventName is string
+                    && request.resource.data.stage is string
+                    && (request.resource.data.workspaceId == null || isWorkspaceMember(request.resource.data.workspaceId));
+      // Read allowed only by tenant members or Super Admin
+      allow read: if isSuperAdmin() ||
+                     (resource.data.workspaceId != null && isWorkspaceMember(resource.data.workspaceId)) ||
+                     (resource.data.organizationId != null && isOrgMember(resource.data.organizationId));
+      // Prevent client tampering or retroactive deletion
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // 2. Daily Analytics Aggregations
+    match /dailyAnalytics/{docId} {
+      allow read: if isSuperAdmin() ||
+                     (resource.data.scopeType == 'WORKSPACE' && isWorkspaceMember(resource.data.scopeId)) ||
+                     (resource.data.scopeType == 'ORGANIZATION' && isOrgMember(resource.data.scopeId));
+      // Server-side / Admin only write
+      allow write: if isSuperAdmin();
+    }
+
+    // 3. Conversion Funnels Definitions
+    match /conversionFunnels/{funnelId} {
+      allow read: if isSuperAdmin() ||
+                     (resource.data.workspaceId != null && isWorkspaceMember(resource.data.workspaceId)) ||
+                     (resource.data.organizationId != null && isOrgMember(resource.data.organizationId));
+      allow write: if isSuperAdmin() ||
+                      (request.resource.data.workspaceId != null && isWorkspaceMember(request.resource.data.workspaceId)) ||
+                      (request.resource.data.organizationId != null && isOrgMember(request.resource.data.organizationId));
+    }
+
+    // 4. Analytics Settings
+    match /analyticsSettings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isSuperAdmin();
+    }
+  }
+}

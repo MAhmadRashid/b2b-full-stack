@@ -1,10 +1,33 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-const BASE_URL = "http://localhost:3000";
+const BASE_URL = "http://localhost:5000";
 
 let demoSessionCookie = "";
 let demoWorkspaceId = "";
+
+test.after(async () => {
+  if (demoWorkspaceId && demoSessionCookie) {
+    try {
+      const keysRes = await fetch(`${BASE_URL}/api/workspaces/${demoWorkspaceId}/keys`, {
+        headers: { Cookie: demoSessionCookie },
+      });
+      if (keysRes.ok) {
+        const { keys } = await keysRes.json();
+        for (const k of keys || []) {
+          if (k.name === "Automated QA Ephemeral Key" || k.name === "Gateway Ingest Test Token") {
+            await fetch(`${BASE_URL}/api/workspaces/${demoWorkspaceId}/keys/${k.id}`, {
+              method: "DELETE",
+              headers: { Cookie: demoSessionCookie },
+            });
+          }
+        }
+      }
+    } catch {
+      // Best-effort cleanup
+    }
+  }
+});
 
 test("1. System Health Check: /api/health responds with 200", async () => {
   const res = await fetch(`${BASE_URL}/api/health`);

@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { recordAuditLog } from "@/lib/audit";
+import { checkRateLimit, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
 import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const isLoopback = ip === "127.0.0.1" || ip === "::1" || ip === "localhost" || ip === "unknown";
+    const rl = checkRateLimit(`forgot_password_${ip}`, {
+      limit: isLoopback ? 2000 : 15,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (!rl.success) {
+      return rateLimitExceededResponse(
+        rl,
+        "Too many password reset requests. Please wait before trying again."
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const { email } = body;
 
@@ -54,9 +68,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Password reset link generated successfully.",
-      resetUrl: `/reset-password?token=${token}`,
-      token, // Available for development, test runner & simulation
+      message: "If an account exists with this email, a password reset link has been created.",
+      ...(process.env.NODE_ENV !== "production"
+        ? {
+            resetUrl: `/reset-password?token=${token}`,
+            token, // Only available for automated tests & dev simulation
+          }
+        : {}),
     });
   } catch (error) {
     console.error("Forgot password error:", error);

@@ -75,6 +75,18 @@ export async function PATCH(
       return NextResponse.json({ error: "notificationId is required" }, { status: 400 });
     }
 
+    const existing = await prisma.notification.findUnique({
+      where: { id: notificationId },
+    });
+
+    if (!existing || existing.workspaceId !== id) {
+      return NextResponse.json({ error: "Notification not found" }, { status: 404 });
+    }
+
+    if (existing.userId && existing.userId !== session.id && !["OWNER", "ADMIN"].includes(perm.role || "")) {
+      return NextResponse.json({ error: "Forbidden: Cannot alter another member's notification" }, { status: 403 });
+    }
+
     const updated = await prisma.notification.update({
       where: { id: notificationId },
       data: { read: true },

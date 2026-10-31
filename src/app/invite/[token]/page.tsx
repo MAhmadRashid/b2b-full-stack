@@ -14,6 +14,8 @@ import {
   CheckCircle2,
   Mail,
   Activity,
+  Layers,
+  LogOut,
 } from "lucide-react";
 
 interface InvitePageProps {
@@ -116,6 +118,11 @@ export default function InviteAcceptPage({ params }: InvitePageProps) {
     }
   };
 
+  const handleLogoutAndSwitch = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.reload();
+  };
+
   return (
     <div
       style={{
@@ -127,7 +134,7 @@ export default function InviteAcceptPage({ params }: InvitePageProps) {
         background: "radial-gradient(ellipse at top, #0d121f 0%, #07090e 100%)",
       }}
     >
-      <div style={{ width: "100%", maxWidth: "460px" }}>
+      <div style={{ width: "100%", maxWidth: "480px" }}>
         {/* Brand Header */}
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <div
@@ -145,9 +152,9 @@ export default function InviteAcceptPage({ params }: InvitePageProps) {
               marginBottom: "16px",
             }}
           >
-            <Activity size={14} /> PulseFlow Telemetry Cloud
+            <Activity size={14} /> Nexora Telemetry Cloud
           </div>
-          <h1 style={{ fontSize: "24px", fontWeight: 800 }}>Workspace Invitation</h1>
+          <h1 style={{ fontSize: "24px", fontWeight: 800 }}>Team Invitation</h1>
         </div>
 
         {/* Loading state */}
@@ -245,7 +252,7 @@ export default function InviteAcceptPage({ params }: InvitePageProps) {
               boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.6)",
             }}
           >
-            {/* Workspace Banner */}
+            {/* Target Banner (Org or Workspace) */}
             <div
               style={{
                 display: "flex",
@@ -260,36 +267,73 @@ export default function InviteAcceptPage({ params }: InvitePageProps) {
             >
               <div
                 style={{
-                  width: "40px",
-                  height: "40px",
+                  width: "42px",
+                  height: "42px",
                   borderRadius: "8px",
                   background: "var(--accent-gradient)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   color: "#fff",
+                  flexShrink: 0,
                 }}
               >
-                <Building size={20} />
+                {invitationData.invitation.workspaceName ? <Layers size={22} /> : <Building size={22} />}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>Workspace</div>
-                <div style={{ fontSize: "15px", fontWeight: 700, color: "#fff" }}>
-                  {invitationData.invitation.workspaceName}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "11.5px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {invitationData.invitation.workspaceName ? "Workspace Invitation" : "Organization Invitation"}
                 </div>
+                <div style={{ fontSize: "16px", fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {invitationData.invitation.workspaceName || invitationData.invitation.organizationName}
+                </div>
+                {invitationData.invitation.organizationName && invitationData.invitation.workspaceName && (
+                  <div style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+                    Part of {invitationData.invitation.organizationName}
+                  </div>
+                )}
               </div>
-              <span className="badge badge-indigo" style={{ fontSize: "11px" }}>
+              <span className="badge badge-indigo" style={{ fontSize: "11px", flexShrink: 0 }}>
                 {invitationData.invitation.role}
               </span>
             </div>
 
-            <div style={{ fontSize: "13.5px", color: "var(--text-secondary)", marginBottom: "20px" }}>
-              You were invited by{" "}
+            {/* Inviter Info */}
+            <div style={{ fontSize: "13.5px", color: "var(--text-secondary)", marginBottom: "18px" }}>
+              Invited by{" "}
               <strong style={{ color: "#f8fafc" }}>
-                {invitationData.invitation.inviterEmail || "Workspace Administrator"}
-              </strong>{" "}
-              to collaborate on PulseFlow.
+                {invitationData.invitation.inviterEmail || "Administrator"}
+              </strong>
             </div>
+
+            {/* Logged in with different email warning */}
+            {invitationData.currentUserLoggedIn && invitationData.isCurrentUserInvited === false && (
+              <div
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: "8px",
+                  background: "rgba(245, 158, 11, 0.12)",
+                  border: "1px solid rgba(245, 158, 11, 0.3)",
+                  color: "#fbbf24",
+                  fontSize: "12.5px",
+                  marginBottom: "18px",
+                  lineHeight: "1.4",
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: "4px" }}>Account Mismatch Detected</div>
+                <div>
+                  You are currently logged in as <strong>{invitationData.currentUserEmail}</strong>, but this invite was issued to <strong>{invitationData.invitation.email}</strong>.
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLogoutAndSwitch}
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginTop: "8px", fontSize: "11.5px" }}
+                >
+                  <LogOut size={12} /> Sign out & switch account
+                </button>
+              </div>
+            )}
 
             {submitError && (
               <div

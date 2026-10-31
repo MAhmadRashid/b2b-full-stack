@@ -33,8 +33,13 @@ export async function GET(
         id: k.id,
         name: k.name,
         keyPrefix: k.keyPrefix,
+        previousPrefix: k.previousPrefix,
+        gracePeriodEndsAt: k.gracePeriodEndsAt,
+        ipRestrictions: k.ipRestrictions,
         scopes: k.scopes.split(","),
+        rateLimit: k.rateLimit,
         revoked: k.revoked,
+        revokedAt: k.revokedAt,
         lastUsedAt: k.lastUsedAt,
         expiresAt: k.expiresAt,
         createdAt: k.createdAt,
@@ -60,12 +65,51 @@ export async function POST(
     const perm = await checkWorkspacePermission(session.id, id, "ADMIN");
     if (!perm.allowed) return NextResponse.json({ error: perm.error }, { status: 403 });
 
+    const ws = await prisma.workspace.findUnique({
+      where: { id },
+      include: { organization: true },
+    });
+    if (!ws) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+
+    const { resolveEffectivePlanConfig } = await import("@/lib/plan-resolver");
+    const planConfig = resolveEffectivePlanConfig(ws);
+
+    // Active API keys quota check
+    const activeKeyCount = await prisma.apiKey.count({
+      where: { workspaceId: id, revoked: false },
+    });
+
+    if (activeKeyCount >= planConfig.limits.maxApiKeys) {
+      return NextResponse.json(
+        {
+          error: "API Key Limit Reached",
+          message: `Your subscription allows up to ${planConfig.limits.maxApiKeys} active API key(s). Revoke existing keys or upgrade your plan.`,
+          upgradeRequired: true,
+          limit: planConfig.limits.maxApiKeys,
+          currentCount: activeKeyCount,
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
-    const { name, scopes = ["metrics:read", "events:write"], environment = "live", expiresIn = "never" } = body;
+    const {
+      name,
+      scopes = ["metrics:read", "events:write"],
+      environment = "live",
+      expiresIn = "never",
+      rateLimit = 120,
+      ipRestrictions = null,
+    } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json({ error: "Key name is required" }, { status: 400 });
     }
+
+    // Clean IP restrictions string
+    const cleanedIpRestrictions = typeof ipRestrictions === "string" && ipRestrictions.trim()
+      ? ipRestrictions.trim()
+      : null;
 
     // Calculate expiration date
     let expiresAt: Date | null = null;
@@ -93,22 +137,48 @@ export async function POST(
     const apiKey = await prisma.apiKey.create({
       data: {
         workspaceId: id,
+        organizationId: ws.organizationId,
         userId: session.id,
         name: name.trim(),
         keyPrefix,
         hashedKey,
         scopes: scopeString,
+        ipRestrictions: cleanedIpRestrictions,
+        rateLimit: Math.min(1000, Math.max(10, rateLimit)),
         expiresAt,
       },
     });
 
     await recordAuditLog({
       workspaceId: id,
+      organizationId: ws.organizationId,
       userId: session.id,
       userEmail: session.email,
       action: "API_KEY_CREATED",
       details: `Generated API key '${name.trim()}' with prefix ${keyPrefix}${expiresAt ? ` (expires ${expiresAt.toISOString()})` : " (never expires)"}`,
     });
+
+    try {
+      const { triggerNotification } = await import("@/lib/notification-dispatcher");
+      await triggerNotification({
+        workspaceId: id,
+        userId: session.id,
+        recipientEmail: session.email,
+        title: `API Key Created: ${name.trim()}`,
+        message: `New developer API key generated with prefix ${keyPrefix}. Keep this token secure.`,
+        type: "INFO",
+        link: "/dashboard/api-keys",
+        emailEventType: "API_KEY_CREATED",
+        idempotencyKey: `apikey_created_${apiKey.id}`,
+        emailDetails: {
+          "Key Name": name.trim(),
+          "Prefix": keyPrefix,
+          "Expires": expiresAt ? expiresAt.toLocaleDateString() : "Never",
+        },
+      });
+    } catch (e) {
+      console.warn("API key notification dispatch deferred:", e);
+    }
 
     // Note: rawKey is ONLY returned once during creation
     return NextResponse.json({
@@ -117,6 +187,7 @@ export async function POST(
         name: apiKey.name,
         keyPrefix: apiKey.keyPrefix,
         scopes: apiKey.scopes.split(","),
+        rateLimit: apiKey.rateLimit,
         createdAt: apiKey.createdAt,
         expiresAt: apiKey.expiresAt,
         rawKey, // Revealed once!
@@ -154,7 +225,7 @@ export async function DELETE(
 
     await prisma.apiKey.update({
       where: { id: keyId },
-      data: { revoked: true },
+      data: { revoked: true, revokedAt: new Date() },
     });
 
     await recordAuditLog({

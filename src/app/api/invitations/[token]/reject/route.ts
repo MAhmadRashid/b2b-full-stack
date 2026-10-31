@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { recordAuditLog } from "@/lib/audit";
+import crypto from "crypto";
 
 export async function POST(
   req: NextRequest,
@@ -12,25 +13,31 @@ export async function POST(
       return NextResponse.json({ error: "Token is required" }, { status: 400 });
     }
 
-    const invitation = await prisma.invitation.findUnique({
-      where: { token },
-      include: { workspace: true },
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const invitation = await prisma.invitation.findFirst({
+      where: {
+        OR: [{ token }, { tokenHash }],
+      },
+      include: { workspace: true, organization: true },
     });
 
-    if (!invitation) {
+    if (!invitation || invitation.status !== "PENDING") {
       return NextResponse.json(
         { error: "Invitation not found or has already been resolved" },
         { status: 404 }
       );
     }
 
-    // Mark as REJECTED or delete
-    await prisma.invitation.delete({
+    // Mark as REJECTED to invalidate token
+    await prisma.invitation.update({
       where: { id: invitation.id },
+      data: { status: "REJECTED" },
     });
 
     await recordAuditLog({
-      workspaceId: invitation.workspaceId,
+      workspaceId: invitation.workspaceId || null,
+      organizationId: invitation.organizationId || invitation.workspace?.organizationId || null,
       action: "INVITATION_REJECTED",
       details: `Invitation for ${invitation.email} was declined by recipient`,
     });

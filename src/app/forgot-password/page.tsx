@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { Mail, ArrowLeft, CheckCircle2, AlertCircle, KeyRound, Activity } from "lucide-react";
+import { NexoraIcon, NexoraLogo } from "@/components/ui/NexoraLogo";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -68,7 +69,7 @@ export default function ForgotPasswordPage() {
               marginBottom: "14px",
             }}
           >
-            <Activity size={14} /> PulseFlow Security
+            <NexoraIcon size={16} /> Nexora Security
           </div>
           <h1 style={{ fontSize: "24px", fontWeight: 800 }}>Account Recovery</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginTop: "4px" }}>

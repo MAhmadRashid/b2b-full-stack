@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://pulseflow_user:${DB_PASSWORD:-secure_db_password_2026}@postgres:5432/pulseflow?schema=public
+      - JWT_SECRET=${JWT_SECRET:-replace_with_a_64_char_secure_jwt_secret}
+      - NEXT_PUBLIC_APP_NAME=PulseFlow
+      - NEXT_PUBLIC_APP_URL=${APP_URL:-http://localhost:3000}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: pulseflow_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_db_password_2026}
+      POSTGRES_DB: pulseflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulseflow_user -d pulseflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

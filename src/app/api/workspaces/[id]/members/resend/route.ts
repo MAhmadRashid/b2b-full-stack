@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { checkWorkspacePermission } from "@/lib/rbac";
 import { recordAuditLog } from "@/lib/audit";
+import { sendInvitationEmail } from "@/lib/email";
 import crypto from "crypto";
 
 export async function POST(
@@ -26,6 +27,7 @@ export async function POST(
 
     const existing = await prisma.invitation.findUnique({
       where: { id: invitationId },
+      include: { workspace: true },
     });
 
     if (!existing || existing.workspaceId !== id) {
@@ -33,24 +35,39 @@ export async function POST(
     }
 
     // Refresh token and extend validity by 7 days
-    const newToken = `inv_${crypto.randomBytes(24).toString("hex")}`;
+    const rawToken = `inv_ws_${crypto.randomBytes(24).toString("hex")}`;
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
     const newExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     const updated = await prisma.invitation.update({
       where: { id: invitationId },
       data: {
-        token: newToken,
+        token: rawToken,
+        tokenHash,
         expiresAt: newExpiresAt,
         status: "PENDING",
       },
     });
 
+    const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/invite/${rawToken}`;
+
+    const emailResult = await sendInvitationEmail({
+      to: updated.email,
+      inviterName: session.name,
+      inviterEmail: session.email,
+      targetName: existing.workspace?.name || "Workspace",
+      targetType: "workspace",
+      role: updated.role,
+      inviteUrl,
+    });
+
     await recordAuditLog({
       workspaceId: id,
+      organizationId: existing.workspace?.organizationId,
       userId: session.id,
       userEmail: session.email,
       action: "INVITATION_RESENT",
-      details: `Renewed invitation for ${existing.email} (New Token: ${newToken.slice(0, 10)}...)`,
+      details: `Renewed invitation for ${existing.email} in workspace '${existing.workspace?.name}'`,
     });
 
     return NextResponse.json({
@@ -63,6 +80,8 @@ export async function POST(
         token: updated.token,
         inviteUrl: `/invite/${updated.token}`,
         expiresAt: updated.expiresAt,
+        emailDelivered: emailResult.delivered,
+        emailDeliveryStatus: emailResult.simulated ? "simulated" : emailResult.delivered ? "delivered" : "failed",
       },
     });
   } catch (error) {

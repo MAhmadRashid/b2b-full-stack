@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
-const BASE_URL = "http://localhost:3000";
+const BASE_URL = "http://localhost:5000";
 
 let ownerCookie = "";
 let adminCookie = "";

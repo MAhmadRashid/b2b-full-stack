@@ -7,6 +7,10 @@ import { prisma } from "./prisma";
 const JWT_SECRET = process.env.JWT_SECRET || "pulseflow-default-secret-change-in-prod";
 const COOKIE_NAME = "pulseflow_session";
 
+if (process.env.NODE_ENV === "production" && !process.env.JWT_SECRET) {
+  console.warn("[SECURITY ALERT] JWT_SECRET environment variable is unset in production environment!");
+}
+
 export interface SessionPayload {
   userId: string;
   email: string;
@@ -46,7 +50,13 @@ export async function getSessionUser(req?: NextRequest): Promise<{
     let token: string | undefined;
 
     if (req) {
-      token = req.cookies.get(COOKIE_NAME)?.value;
+      const authHeader = req.headers.get("authorization");
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        token = authHeader.substring(7).trim();
+      }
+      if (!token) {
+        token = req.cookies.get(COOKIE_NAME)?.value;
+      }
     } else {
       const cookieStore = await cookies();
       token = cookieStore.get(COOKIE_NAME)?.value;
@@ -54,19 +64,41 @@ export async function getSessionUser(req?: NextRequest): Promise<{
 
     if (!token) return null;
 
-    const decoded = verifyToken(token);
-    if (!decoded || !decoded.userId) return null;
+    let targetUserId: string | null = null;
+    let targetEmail: string | null = null;
 
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+    // 1. Try standard HMAC JWT token
+    const decodedJwt = verifyToken(token);
+    if (decodedJwt && decodedJwt.userId) {
+      targetUserId = decodedJwt.userId;
+    } else {
+      // 2. Try Firebase ID Token verification via Admin SDK
+      try {
+        const { verifyFirebaseIdToken } = await import("./firebase-admin");
+        const decodedFirebase = await verifyFirebaseIdToken(token);
+        if (decodedFirebase && decodedFirebase.uid) {
+          targetEmail = decodedFirebase.email || null;
+        }
+      } catch (fbErr) {
+        // Fall through
+      }
+    }
+
+    if (!targetUserId && !targetEmail) return null;
+
+    const user = await prisma.user.findFirst({
+      where: targetUserId ? { id: targetUserId } : { email: targetEmail! },
       select: {
         id: true,
         email: true,
         name: true,
         avatarUrl: true,
         systemRole: true,
+        suspended: true,
       },
     });
+
+    if (!user || user.suspended) return null;
 
     return user;
   } catch (error) {

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useDashboard } from "../layout";
+import { useDashboard } from "../DashboardContext";
 import {
   BarChart3,
   Clock,
@@ -17,14 +17,28 @@ import {
   FileSpreadsheet,
   FileCode,
   ChevronDown,
+  TrendingUp,
+  Users,
+  Target,
+  ArrowRight,
+  Zap,
+  CheckCircle2,
+  ShieldCheck,
+  PieChart,
+  Layers,
+  Calendar,
+  ChevronRight,
 } from "lucide-react";
 
 export default function AnalyticsPage() {
   const { activeWorkspace } = useDashboard();
+  const [activeTab, setActiveTab] = useState<"funnel" | "telemetry">("funnel");
   const [data, setData] = useState<any>(null);
   const [overview, setOverview] = useState<any>(null);
+  const [funnelData, setFunnelData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [range, setRange] = useState("7d");
+  const [funnelLoading, setFunnelLoading] = useState(false);
+  const [range, setRange] = useState("30d");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
@@ -38,6 +52,22 @@ export default function AnalyticsPage() {
     const url = `/api/workspaces/${activeWorkspace.id}/metrics/export?format=${format}`;
     window.open(url, "_blank");
     setTimeout(() => setIsExporting(false), 2000);
+  };
+
+  const fetchFunnel = async () => {
+    if (!activeWorkspace) return;
+    setFunnelLoading(true);
+    try {
+      const res = await fetch(`/api/workspaces/${activeWorkspace.id}/analytics/funnel?range=${range}`);
+      if (res.ok) {
+        const json = await res.json();
+        setFunnelData(json);
+      }
+    } catch (err) {
+      console.error("Funnel fetch error:", err);
+    } finally {
+      setFunnelLoading(false);
+    }
   };
 
   const fetchAnalytics = async () => {
@@ -64,6 +94,7 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     fetchAnalytics();
+    fetchFunnel();
   }, [activeWorkspace?.id, range]);
 
   const recentEvents = data?.recentEvents || [];
@@ -119,7 +150,7 @@ export default function AnalyticsPage() {
                   position: "absolute",
                   right: 0,
                   top: "calc(100% + 6px)",
-                  background: "#121624",
+                  background: "var(--bg-card)",
                   border: "1px solid var(--border-medium)",
                   borderRadius: "8px",
                   padding: "6px",
@@ -128,7 +159,7 @@ export default function AnalyticsPage() {
                   gap: "4px",
                   minWidth: "210px",
                   zIndex: 50,
-                  boxShadow: "0 10px 25px rgba(0, 0, 0, 0.5)",
+                  boxShadow: "var(--shadow-lg)",
                 }}
               >
                 <button
@@ -175,7 +206,7 @@ export default function AnalyticsPage() {
               padding: "2px",
             }}
           >
-            {["24h", "7d", "30d"].map((r) => (
+            {["7d", "30d", "90d", "all"].map((r) => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
@@ -186,6 +217,8 @@ export default function AnalyticsPage() {
                   fontWeight: 600,
                   color: range === r ? "#fff" : "var(--text-muted)",
                   background: range === r ? "var(--accent-indigo)" : "transparent",
+                  border: "none",
+                  cursor: "pointer",
                 }}
               >
                 {r.toUpperCase()}
@@ -195,76 +228,312 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Latency Percentiles & Status Breakdown Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
-        {/* Latency Percentiles */}
-        <div className="glass-card" style={{ padding: "24px" }}>
-          <h3 style={{ fontSize: "16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <Clock size={16} color="#06b6d4" /> Latency Percentiles (p-metrics)
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", textAlign: "center" }}>
-            <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
-              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p50 (Median)</div>
-              <div style={{ fontSize: "22px", fontWeight: 700, color: "#34d399" }}>
-                {overview?.kpis?.p50LatencyMs || 0}ms
+      {/* Analytics Sub-Tab Navigation */}
+      <div style={{ display: "flex", gap: "10px", borderBottom: "1px solid var(--border-subtle)", paddingBottom: "10px" }}>
+        <button
+          onClick={() => setActiveTab("funnel")}
+          className={`btn btn-sm ${activeTab === "funnel" ? "btn-primary" : "btn-secondary"}`}
+          style={{ display: "flex", alignItems: "center", gap: "8px" }}
+        >
+          <Target size={15} /> Conversion Funnel & Product Metrics
+        </button>
+        <button
+          onClick={() => setActiveTab("telemetry")}
+          className={`btn btn-sm ${activeTab === "telemetry" ? "btn-primary" : "btn-secondary"}`}
+          style={{ display: "flex", alignItems: "center", gap: "8px" }}
+        >
+          <Activity size={15} /> Raw API Ingestion & Latency Logs
+        </button>
+      </div>
+
+      {/* TAB 1: CONVERSION FUNNEL & PRODUCT METRICS (Phase 19) */}
+      {activeTab === "funnel" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* Top KPI Metric Cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "16px" }}>
+            <div className="glass-card" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12.5px", color: "var(--text-secondary)" }}>Total Signups</span>
+                <Users size={16} color="#38bdf8" />
               </div>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "var(--text-primary)" }}>
+                {funnelData?.kpis?.totalSignups ?? 0}
+              </div>
+              <span style={{ fontSize: "11.5px", color: "#34d399" }}>Verified user accounts</span>
             </div>
-            <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
-              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p95</div>
-              <div style={{ fontSize: "22px", fontWeight: 700, color: "#38bdf8" }}>
-                {overview?.kpis?.p95LatencyMs || 0}ms
+
+            <div className="glass-card" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12.5px", color: "var(--text-secondary)" }}>Active Workspaces</span>
+                <Layers size={16} color="#818cf8" />
               </div>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#818cf8" }}>
+                {funnelData?.kpis?.activeWorkspaces ?? 0}
+              </div>
+              <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>Tenant containers</span>
             </div>
-            <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
-              <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p99</div>
-              <div style={{ fontSize: "22px", fontWeight: 700, color: "#f87171" }}>
-                {overview?.kpis?.p99LatencyMs || 0}ms
+
+            <div className="glass-card" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12.5px", color: "var(--text-secondary)" }}>Trial & Onboarding</span>
+                <CheckCircle2 size={16} color="#f59e0b" />
               </div>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#fbbf24" }}>
+                {funnelData?.kpis?.onboardingCompleted ?? 0}
+              </div>
+              <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
+                {funnelData?.kpis?.trialingWorkspaces ?? 0} active trials
+              </span>
+            </div>
+
+            <div className="glass-card" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12.5px", color: "var(--text-secondary)" }}>Paid Conversions</span>
+                <ShieldCheck size={16} color="#10b981" />
+              </div>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#34d399" }}>
+                {funnelData?.kpis?.activeSubscriptions ?? 0}
+              </div>
+              <span style={{ fontSize: "11.5px", color: "#34d399" }}>
+                Overall: {funnelData?.funnel?.overallConversionRate ?? 0}% from visit
+              </span>
             </div>
           </div>
-        </div>
 
-        {/* Status Distribution */}
-        <div className="glass-card" style={{ padding: "24px" }}>
-          <h3 style={{ fontSize: "16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
-            <Server size={16} color="#8b5cf6" /> HTTP Response Status Codes
-          </h3>
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {data?.statusDistribution && data.statusDistribution.length > 0 ? (
-              data.statusDistribution.map((item: any) => (
-                <div key={item.code} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                  <span
-                    className={`badge ${
-                      item.code >= 500
-                        ? "badge-danger"
-                        : item.code >= 400
-                        ? "badge-warning"
-                        : "badge-success"
-                    }`}
-                    style={{ width: "50px", justifyContent: "center" }}
-                  >
-                    {item.code}
-                  </span>
-                  <div style={{ flexGrow: 1, height: "8px", background: "rgba(255, 255, 255, 0.06)", borderRadius: "4px", overflow: "hidden" }}>
-                    <div
-                      style={{
-                        width: `${item.percentage}%`,
-                        height: "100%",
-                        background: item.code >= 500 ? "#ef4444" : item.code >= 400 ? "#f59e0b" : "#10b981",
-                      }}
-                    />
-                  </div>
-                  <span style={{ fontSize: "12.5px", color: "var(--text-secondary)", minWidth: "65px", textAlign: "right" }}>
-                    {item.count} ({item.percentage}%)
-                  </span>
-                </div>
-              ))
+          {/* Interactive Conversion Funnel Visualization */}
+          <div className="glass-card" style={{ padding: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "10px" }}>
+              <div>
+                <h3 style={{ fontSize: "18px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Target size={18} color="#818cf8" /> Multi-Stage Conversion Funnel
+                </h3>
+                <p style={{ color: "var(--text-secondary)", fontSize: "13px", marginTop: "4px" }}>
+                  Tracking visitor progression from landing page visits down to paying subscription activation with stage-to-stage drop-off.
+                </p>
+              </div>
+              <span style={{ fontSize: "12px", background: "rgba(99, 102, 241, 0.15)", color: "#a5b4fc", padding: "4px 10px", borderRadius: "6px", border: "1px solid rgba(99, 102, 241, 0.3)" }}>
+                Range: {range.toUpperCase()} (Unique Session Deduplication)
+              </span>
+            </div>
+
+            {funnelLoading ? (
+              <div style={{ textAlign: "center", padding: "40px", color: "var(--text-muted)" }}>
+                <RefreshCw size={24} style={{ animation: "spin 1s linear infinite", margin: "0 auto 8px" }} />
+                <div>Computing funnel drop-off statistics...</div>
+              </div>
             ) : (
-              <div style={{ color: "var(--text-muted)", fontSize: "13px" }}>No status data available.</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                {funnelData?.funnel?.stages?.map((stage: any, idx: number) => {
+                  const barColor =
+                    idx === 0 ? "#6366f1" :
+                    idx === 1 ? "#818cf8" :
+                    idx === 2 ? "#38bdf8" :
+                    idx === 3 ? "#06b6d4" :
+                    idx === 4 ? "#14b8a6" :
+                    idx === 5 ? "#10b981" :
+                    idx === 6 ? "#22c55e" : "#eab308";
+
+                  return (
+                    <div
+                      key={stage.stage}
+                      style={{
+                        background: "rgba(255, 255, 255, 0.02)",
+                        border: "1px solid var(--border-subtle)",
+                        borderRadius: "10px",
+                        padding: "16px 20px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px", flexWrap: "wrap", gap: "8px" }}>
+                        <div>
+                          <span style={{ fontWeight: 700, fontSize: "14px", color: "var(--text-primary)" }}>
+                            {stage.label}
+                          </span>
+                          <span style={{ fontSize: "12px", color: "var(--text-muted)", marginLeft: "10px" }}>
+                            ({stage.description})
+                          </span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "14px", fontSize: "13px" }}>
+                          <span style={{ color: "var(--text-muted)" }}>
+                            <strong style={{ color: "var(--text-primary)" }}>{stage.uniqueSessions}</strong> unique users / sessions
+                          </span>
+                          <span style={{ color: "#38bdf8", fontWeight: 700 }}>
+                            {stage.conversionRateFromPrevious}% step conversion
+                          </span>
+                          {idx > 0 && (
+                            <span style={{ color: stage.dropoffRate > 50 ? "#f87171" : "#fbbf24", fontSize: "11.5px" }}>
+                              {stage.dropoffRate}% drop-off
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Progress Funnel Bar */}
+                      <div style={{ height: "10px", background: "rgba(255, 255, 255, 0.06)", borderRadius: "6px", overflow: "hidden", marginBottom: "6px" }}>
+                        <div
+                          style={{
+                            width: `${Math.max(stage.conversionRateFromTop, 2)}%`,
+                            height: "100%",
+                            background: barColor,
+                            transition: "width 0.4s ease",
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--text-muted)" }}>
+                        <span>Denominator: {stage.denominatorText}</span>
+                        <span>{stage.conversionRateFromTop}% overall funnel retention</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
+
+          {/* Daily Activity Trends & Lead/Demo Pipelines */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
+            {/* Daily Activity Chart */}
+            <div className="glass-card" style={{ padding: "20px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <TrendingUp size={16} color="#34d399" /> Daily Activity & Signups
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {funnelData?.trends?.dailyActivity?.map((day: any) => (
+                  <div key={day.date} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "12px" }}>
+                    <span style={{ width: "55px", color: "var(--text-muted)" }}>{day.date}</span>
+                    <div style={{ flexGrow: 1, height: "6px", background: "rgba(255, 255, 255, 0.06)", borderRadius: "4px", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          width: `${Math.min(100, Math.max(day.signups * 25, 4))}%`,
+                          height: "100%",
+                          background: "#6366f1",
+                        }}
+                      />
+                    </div>
+                    <span style={{ minWidth: "80px", color: "#e2e8f0", textAlign: "right" }}>
+                      {day.signups} users • {day.workspaces} ws
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pipeline & Inbound Summary */}
+            <div className="glass-card" style={{ padding: "20px" }}>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Zap size={16} color="#fbbf24" /> Inbound Inquiries & Demos
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div style={{ padding: "12px 14px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Total Sales Inquiries</span>
+                    <strong style={{ color: "#38bdf8" }}>{funnelData?.kpis?.totalLeads ?? 0}</strong>
+                  </div>
+                  <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
+                    {funnelData?.kpis?.newInquiries ?? 0} awaiting sales representative response
+                  </span>
+                </div>
+
+                <div style={{ padding: "12px 14px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Interactive Demo Bookings</span>
+                    <strong style={{ color: "#fbbf24" }}>{funnelData?.kpis?.totalDemos ?? 0}</strong>
+                  </div>
+                  <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
+                    Enterprise evaluation sessions requested
+                  </span>
+                </div>
+
+                <div style={{ padding: "12px 14px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Tenant Scoped Telemetry</span>
+                    <strong style={{ color: "#34d399" }}>{funnelData?.kpis?.telemetryProcessed ?? 0}</strong>
+                  </div>
+                  <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
+                    Events processed in current workspace
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* TAB 2: RAW TELEMETRY & LATENCY LOGS */}
+      {activeTab === "telemetry" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {/* Latency Percentiles & Status Breakdown Cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "20px" }}>
+            {/* Latency Percentiles */}
+            <div className="glass-card" style={{ padding: "24px" }}>
+              <h3 style={{ fontSize: "16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Clock size={16} color="#06b6d4" /> Latency Percentiles (p-metrics)
+              </h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", textAlign: "center" }}>
+                <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p50 (Median)</div>
+                  <div style={{ fontSize: "22px", fontWeight: 700, color: "#34d399" }}>
+                    {overview?.kpis?.p50LatencyMs || 0}ms
+                  </div>
+                </div>
+                <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p95</div>
+                  <div style={{ fontSize: "22px", fontWeight: 700, color: "#38bdf8" }}>
+                    {overview?.kpis?.p95LatencyMs || 0}ms
+                  </div>
+                </div>
+                <div style={{ padding: "16px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "4px" }}>p99</div>
+                  <div style={{ fontSize: "22px", fontWeight: 700, color: "#f87171" }}>
+                    {overview?.kpis?.p99LatencyMs || 0}ms
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Status Distribution */}
+            <div className="glass-card" style={{ padding: "24px" }}>
+              <h3 style={{ fontSize: "16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Server size={16} color="#8b5cf6" /> HTTP Response Status Codes
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {data?.statusDistribution && data.statusDistribution.length > 0 ? (
+                  data.statusDistribution.map((item: any) => (
+                    <div key={item.code} style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <span
+                        className={`badge ${
+                          item.code >= 500
+                            ? "badge-danger"
+                            : item.code >= 400
+                            ? "badge-warning"
+                            : "badge-success"
+                        }`}
+                        style={{ width: "50px", justifyContent: "center" }}
+                      >
+                        {item.code}
+                      </span>
+                      <div style={{ flexGrow: 1, height: "8px", background: "rgba(255, 255, 255, 0.06)", borderRadius: "4px", overflow: "hidden" }}>
+                        <div
+                          style={{
+                            width: `${item.percentage}%`,
+                            height: "100%",
+                            background: item.code >= 500 ? "#ef4444" : item.code >= 400 ? "#f59e0b" : "#10b981",
+                          }}
+                        />
+                      </div>
+                      <span style={{ fontSize: "12.5px", color: "var(--text-secondary)", minWidth: "65px", textAlign: "right" }}>
+                        {item.count} ({item.percentage}%)
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ color: "var(--text-muted)", fontSize: "13px" }}>No status data available.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Interactive Search & Filter Event Log */}
       <div className="glass-card" style={{ padding: "24px" }}>

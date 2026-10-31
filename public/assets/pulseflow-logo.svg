@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" fill="none" width="100%" height="100%">
+  <defs>
+    <!-- Modern Blue-Violet Continuous Flow Gradient -->
+    <linearGradient id="pf-logo-flow" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="35%" stop-color="#6366f1" />
+      <stop offset="70%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#d946ef" />
+    </linearGradient>
+
+    <!-- Secondary Ambient Ribbon Gradient -->
+    <linearGradient id="pf-logo-ribbon" x1="8" y1="40" x2="40" y2="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.9" />
+      <stop offset="50%" stop-color="#6366f1" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0.9" />
+    </linearGradient>
+
+    <radialGradient id="pf-logo-pulse-center" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="45%" stop-color="#c4b5fd" />
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="pf-text-gradient" x1="120" y1="12" x2="190" y2="36" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="50%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+
+    <filter id="pf-logo-glow" x="-15%" y="-15%" width="130%" height="130%" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="1.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- ICON SECTION (0,0 to 48,48) -->
+  <g transform="translate(0, 0)">
+    <!-- Ambient Wave Ribbon -->
+    <path
+      d="M 6 32 C 12 36, 17 38, 23 33 C 29 28, 33 22, 42 16"
+      stroke="url(#pf-logo-ribbon)"
+      stroke-width="3"
+      stroke-linecap="round"
+      opacity="0.45"
+    />
+
+    <!-- Main Pulse Flow -->
+    <path
+      d="M 6 25 C 10 25, 14 26, 17 21 L 21 11 L 26 37 L 30 20 L 33 25 C 37 25, 40 23, 42 18"
+      stroke="url(#pf-logo-flow)"
+      stroke-width="3.75"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      filter="url(#pf-logo-glow)"
+    />
+
+    <!-- Vector Energy Dots -->
+    <circle cx="21" cy="11" r="2.25" fill="#60a5fa" />
+    <circle cx="26" cy="37" r="2.5" fill="#c084fc" />
+    <circle cx="30" cy="20" r="2" fill="#e879f9" />
+
+    <!-- Pulse Spark -->
+    <circle cx="24" cy="24" r="5" fill="url(#pf-logo-pulse-center)" opacity="0.8" />
+    <circle cx="24" cy="24" r="1.5" fill="#ffffff" />
+  </g>
+
+  <!-- WORDMARK: PulseFlow -->
+  <text x="56" y="32" font-family="system-ui, -apple-system, 'Inter', 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="800" letter-spacing="-0.03em" fill="currentColor">
+    Pulse<tspan fill="url(#pf-text-gradient)">Flow</tspan>
+  </text>
+</svg>

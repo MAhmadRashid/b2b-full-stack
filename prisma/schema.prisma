@@ -14,15 +14,22 @@ model User {
   passwordHash String
   avatarUrl    String?
   systemRole   String       @default("USER") // SUPERADMIN or USER
+  suspended    Boolean      @default(false)
+  suspensionReason String?
   createdAt    DateTime     @default(now())
   updatedAt      DateTime                 @updatedAt
   emailVerified  DateTime?
 
-  memberships    Membership[]
-  orgMemberships OrganizationMembership[]
-  createdKeys    ApiKey[]
-  auditLogs      AuditLog[]
-  notifications  Notification[]
+  memberships       Membership[]
+  orgMemberships    OrganizationMembership[]
+  ownedOrgs         Organization[] @relation("OrgOwner")
+  createdWorkspaces Workspace[]    @relation("WorkspaceCreator")
+  createdKeys       ApiKey[]
+  auditLogs         AuditLog[]
+  notifications     Notification[]
+  notificationPreferences NotificationPreference?
+  emailLogs         EmailLog[]
+  onboarding        OnboardingProgress?
 }
 
 model Workspace {
@@ -37,6 +44,9 @@ model Workspace {
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
+  creatorId           String?
+  creator             User?         @relation("WorkspaceCreator", fields: [creatorId], references: [id], onDelete: SetNull)
+
   members             Membership[]
   apiKeys             ApiKey[]
   events              MetricEvent[]
@@ -47,9 +57,13 @@ model Workspace {
   notifications       Notification[]
   subscription        Subscription?
   usageRecords        UsageRecord[]
+  apiRequestLogs      ApiRequestLog[]
 
   organizationId      String?
   organization        Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([creatorId])
 }
 
 model Membership {
@@ -68,23 +82,34 @@ model Membership {
 }
 
 model ApiKey {
-  id          String    @id @default(cuid())
-  workspaceId String
-  userId      String
-  name        String
-  keyPrefix   String    // e.g. "pk_live_ab12..."
-  hashedKey   String
-  scopes      String    @default("metrics:read,events:write") // Comma-separated permissions
-  lastUsedAt  DateTime?
-  expiresAt   DateTime?
-  revoked     Boolean   @default(false)
-  createdAt   DateTime  @default(now())
+  id             String          @id @default(cuid())
+  workspaceId    String?
+  organizationId String?
+  userId         String
+  name           String
+  keyPrefix      String          // e.g. "pfl_live_ab12..."
+  hashedKey      String
+  scopes         String          @default("metrics:read,events:write") // Comma-separated permissions
+  rateLimit      Int             @default(120) // requests per minute
+  ipRestrictions String?         // Comma-separated IP addresses or CIDR blocks (e.g. "192.168.1.0/24, 10.0.0.1")
+  previousHashedKey String?      // For zero-downtime key rotation
+  previousPrefix    String?      // Prefix of previous key during grace period
+  gracePeriodEndsAt DateTime?    // Time until which previous key remains valid
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  revoked        Boolean         @default(false)
+  revokedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
 
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace      Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization   Organization?   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestLogs    ApiRequestLog[]
 
   @@index([keyPrefix])
   @@index([workspaceId, revoked])
+  @@index([organizationId, revoked])
 }
 
 model MetricEvent {
@@ -105,36 +130,44 @@ model MetricEvent {
 }
 
 model Invoice {
-  id            String    @id @default(cuid())
-  workspaceId   String
-  invoiceNumber String    @unique
-  amountCents   Int
-  currency      String    @default("USD")
-  status        String    @default("PAID") // PAID, PENDING, FAILED
-  periodStart   DateTime
-  periodEnd     DateTime
-  pdfUrl        String?
-  createdAt     DateTime  @default(now())
+  id             String        @id @default(cuid())
+  workspaceId    String?
+  organizationId String?
+  invoiceNumber  String        @unique
+  amountCents    Int
+  currency       String        @default("USD")
+  status         String        @default("PAID") // PAID, PENDING, FAILED
+  periodStart    DateTime
+  periodEnd      DateTime
+  pdfUrl         String?
+  billingEmail   String?
+  paymentMethod  String?
+  createdAt      DateTime      @default(now())
 
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace      Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, status])
+  @@index([organizationId, status])
 }
 
 model AuditLog {
-  id          String     @id @default(cuid())
-  workspaceId String?
-  userId      String?
-  userEmail   String?
-  action      String     // USER_LOGIN, KEY_CREATED, ROLE_CHANGED, WORKSPACE_UPDATED, PLAN_CHANGED
-  details     String
-  ipAddress   String     @default("127.0.0.1")
-  createdAt   DateTime   @default(now())
+  id             String        @id @default(cuid())
+  workspaceId    String?
+  organizationId String?
+  userId         String?
+  userEmail      String?
+  action         String        // USER_LOGIN, KEY_CREATED, ROLE_CHANGED, WORKSPACE_UPDATED, PLAN_CHANGED
+  details        String
+  ipAddress      String        @default("127.0.0.1")
+  createdAt      DateTime      @default(now())
 
-  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user        User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  workspace      Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
+  @@index([organizationId, createdAt])
   @@index([userId, createdAt])
 }
 
@@ -151,31 +184,55 @@ model Webhook {
 }
 
 model Invitation {
-  id           String    @id @default(cuid())
-  workspaceId  String
-  email        String
-  role         String    @default("MEMBER") // ADMIN, MEMBER, VIEWER
-  token        String    @unique
-  expiresAt    DateTime
-  status       String    @default("PENDING") // PENDING, ACCEPTED, REJECTED, REVOKED
-  inviterEmail String?
-  createdAt    DateTime  @default(now())
+  id             String        @id @default(cuid())
+  workspaceId    String?
+  organizationId String?
+  email          String
+  role           String        @default("MEMBER") // OWNER, ADMIN, MEMBER, VIEWER
+  token          String        @unique
+  tokenHash      String?       @unique
+  expiresAt      DateTime
+  status         String        @default("PENDING") // PENDING, ACCEPTED, REJECTED, REVOKED
+  inviterEmail   String?
+  createdAt      DateTime      @default(now())
 
-  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace      Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@index([token])
+  @@index([tokenHash])
   @@index([email])
+  @@index([workspaceId, email, status])
+  @@index([organizationId, email, status])
 }
 
 model Organization {
-  id          String                   @id @default(cuid())
-  name        String
-  slug        String                   @unique
-  createdAt   DateTime                 @default(now())
-  updatedAt   DateTime                 @updatedAt
+  id               String                   @id @default(cuid())
+  name             String
+  logoUrl          String?
+  slug             String                   @unique
+  ownerId          String?
+  owner            User?                    @relation("OrgOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  plan             String                   @default("FREE") // FREE, STARTER, PRO, BUSINESS, ENTERPRISE
+  billingEmail     String?
+  billingAddress   String?
+  taxId            String?
+  stripeCustomerId String?
+  suspended        Boolean                  @default(false)
+  suspensionReason String?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
 
-  members     OrganizationMembership[]
-  workspaces  Workspace[]
+  members          OrganizationMembership[]
+  workspaces       Workspace[]
+  invitations      Invitation[]
+  auditLogs        AuditLog[]
+  subscription     Subscription?
+  invoices         Invoice[]
+  apiKeys          ApiKey[]
+  apiRequestLogs   ApiRequestLog[]
+
+  @@index([ownerId])
 }
 
 model OrganizationMembership {
@@ -190,6 +247,8 @@ model OrganizationMembership {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   @@unique([userId, organizationId])
+  @@index([organizationId, role])
+  @@index([userId])
 }
 
 model VerificationToken {
@@ -233,20 +292,35 @@ model Notification {
 }
 
 model Subscription {
-  id                   String    @id @default(cuid())
-  workspaceId          String    @unique
-  tier                 String    @default("STARTER") // STARTER, PRO, ENTERPRISE
-  billingCycle         String    @default("MONTHLY") // MONTHLY, ANNUAL
-  status               String    @default("ACTIVE") // ACTIVE, PAST_DUE, CANCELED, TRIALING
-  currentPeriodStart   DateTime  @default(now())
+  id                   String        @id @default(cuid())
+  workspaceId          String?       @unique
+  organizationId       String?       @unique
+  tier                 String        @default("FREE") // FREE, STARTER, PRO, BUSINESS, ENTERPRISE
+  billingCycle         String        @default("MONTHLY") // MONTHLY, ANNUAL
+  status               String        @default("ACTIVE") // ACTIVE, PAST_DUE, CANCELED, TRIALING
+  currentPeriodStart   DateTime      @default(now())
   currentPeriodEnd     DateTime
-  cancelAtPeriodEnd    Boolean   @default(false)
+  cancelAtPeriodEnd    Boolean       @default(false)
   stripeCustomerId     String?
   stripeSubscriptionId String?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
+  billingEmail         String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
-  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace            Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  organization         Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model PaymentEvent {
+  id         String   @id @default(cuid())
+  eventId    String   @unique
+  provider   String   @default("STRIPE")
+  eventType  String
+  status     String   @default("PROCESSED") // PROCESSED, FAILED, IGNORED
+  payload    String?
+  createdAt  DateTime @default(now())
+
+  @@index([eventId])
 }
 
 model UsageRecord {
@@ -263,3 +337,222 @@ model UsageRecord {
   @@unique([workspaceId, date])
   @@index([workspaceId, date])
 }
+
+model ApiRequestLog {
+  id             String        @id @default(cuid())
+  apiKeyId       String?
+  organizationId String?
+  workspaceId    String?
+  endpoint       String
+  method         String        @default("POST")
+  statusCode     Int           @default(200)
+  ipAddress      String?
+  userAgent      String?
+  durationMs     Int           @default(0)
+  timestamp      DateTime      @default(now())
+
+  apiKey         ApiKey?       @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  workspace      Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, timestamp])
+  @@index([organizationId, timestamp])
+  @@index([workspaceId, timestamp])
+  @@index([endpoint, statusCode])
+  @@index([timestamp])
+}
+
+model PlatformSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String   // JSON string representation
+  category    String   @default("GENERAL") // GENERAL, FEATURE_FLAG, SECURITY, BILLING
+  description String?
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+}
+
+model NotificationPreference {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  securityAlerts  Boolean  @default(true) // Essential - non-opt-outable
+  billingAlerts   Boolean  @default(true) // Subscription & payment failure
+  usageAlerts     Boolean  @default(true) // Quota warnings & limits
+  teamAlerts      Boolean  @default(true) // Invitations & member changes
+  apiKeyAlerts    Boolean  @default(true) // Key created, expiring, revoked
+  marketingEmails Boolean  @default(false)
+  emailFrequency  String   @default("IMMEDIATE") // IMMEDIATE, DAILY_DIGEST, WEEKLY
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailLog {
+  id              String   @id @default(cuid())
+  userId          String?
+  toEmail         String
+  eventType       String   // WELCOME, VERIFICATION, PASSWORD_RESET, INVITATION, TEAM_CHANGE, BILLING, USAGE_LIMIT, API_KEY
+  subject         String
+  idempotencyKey  String?  @unique // Prevents duplicate email dispatches on retries
+  status          String   @default("DELIVERED") // PENDING, DELIVERED, FAILED, RETRYING
+  provider        String   @default("SIMULATED") // RESEND, SMTP, SENDGRID, SIMULATED
+  providerMessageId String?
+  attempts        Int      @default(1)
+  lastError       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([toEmail, eventType])
+  @@index([status])
+  @@index([createdAt])
+}
+
+
+model OnboardingProgress {
+  id                   String   @id @default(cuid())
+  userId               String   @unique
+  currentStep          Int      @default(1)
+  completed            Boolean  @default(false)
+  skipped              Boolean  @default(false)
+  tourCompleted        Boolean  @default(false)
+  tourDismissed        Boolean  @default(false)
+  completedSteps       String   @default("[]") // JSON array of completed step IDs: ["profile", "organization", "workspace", "team", "api_key"]
+  checklistDismissed   Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model LeadSubmission {
+  id                   String      @id @default(cuid())
+  name                 String
+  workEmail            String
+  company              String
+  teamSize             String      // "1-10", "11-50", "51-200", "201-1000", "1000+"
+  message              String
+  consent              Boolean     @default(true)
+  status               String      @default("NEW") // NEW, CONTACTED, QUALIFIED, CONVERTED, LOST
+  priority             String      @default("MEDIUM") // LOW, MEDIUM, HIGH
+  source               String      @default("WEBSITE_CONTACT_SALES")
+  internalNotes        String?     // Staff notes and qualification memos
+  followUpDate         DateTime?   // Scheduled follow-up reminder
+  contactHistory       String      @default("[]") // JSON array of activity events: [{ timestamp, author, note, action }]
+  convertedAt          DateTime?
+  convertedUserId      String?
+  convertedWorkspaceId String?
+  ipAddress            String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  @@index([workEmail])
+  @@index([status])
+  @@index([priority])
+  @@index([followUpDate])
+  @@index([createdAt])
+}
+
+model DemoBookingRequest {
+  id            String   @id @default(cuid())
+  name          String
+  workEmail     String
+  company       String
+  teamSize      String
+  preferredTime String   // e.g. "2026-10-30T14:00" or ISO slot description
+  timezone      String   @default("UTC")
+  focusArea     String   @default("GENERAL") // LATENCY, RBAC, COMPLIANCE, BILLING
+  status        String   @default("PENDING_REVIEW") // PENDING_REVIEW, SCHEDULED, COMPLETED, CANCELLED
+  notes         String?
+  ipAddress     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([workEmail])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model FunnelEvent {
+  id             String    @id @default(cuid())
+  idempotencyKey String?   @unique
+  sessionId      String    // Anonymous browser session cookie or user fingerprint
+  userId         String?   // Linked once authenticated
+  organizationId String?   // Linked once org created/selected
+  workspaceId    String?   // Linked once workspace created/selected
+  stage          String    // LANDING_VISIT, TRIAL_CTA_CLICK, SIGNUP_STARTED, SIGNUP_COMPLETED, ORG_WORKSPACE_CREATED, ONBOARDING_STEP_COMPLETED, TRIAL_STARTED, SUBSCRIPTION_ACTIVATED
+  eventName      String    // Granular trigger name: e.g. hero_cta_primary_clicked, pricing_pro_selected
+  path           String?   // Page URL pathname
+  referrer       String?   // Acquisition source or internal referral
+  metadata       String?   // Sanitized JSON properties (zero PII, zero tokens/passwords)
+  ipAddress      String?
+  userAgent      String?
+  timestamp      DateTime  @default(now())
+
+  @@index([sessionId, stage])
+  @@index([userId, stage])
+  @@index([organizationId, stage])
+  @@index([workspaceId, stage])
+  @@index([stage, timestamp])
+  @@index([timestamp])
+  @@index([eventName, timestamp])
+}
+
+model DailyAnalytics {
+  id             String    @id @default(cuid())
+  date           DateTime  // Midnight UTC of recorded date
+  scopeType      String    @default("PLATFORM") // PLATFORM, ORGANIZATION, WORKSPACE
+  scopeId        String    @default("") // "" for platform, orgId for org, workspaceId for workspace
+  totalEvents    Int       @default(0)
+  uniqueSessions Int       @default(0)
+  uniqueUsers    Int       @default(0)
+  stageCounts    String    @default("{}") // JSON map: { LANDING_VISIT: 10, TRIAL_CTA_CLICK: 5, ... }
+  eventCounts    String    @default("{}") // JSON map: { [eventName]: count }
+  kpis           String    @default("{}") // JSON map: { signups: 2, workspaces: 1, activations: 1 }
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([date, scopeType, scopeId])
+  @@index([scopeType, scopeId, date])
+  @@index([date])
+}
+
+
+model ConversionFunnelDefinition {
+  id             String    @id @default(cuid())
+  organizationId String?
+  workspaceId    String?
+  name           String
+  description    String?
+  stages         String    // JSON array of strings, e.g. ["LANDING_VISIT", "TRIAL_CTA_CLICK", "SIGNUP_COMPLETED"]
+  isDefault      Boolean   @default(false)
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([organizationId])
+  @@index([workspaceId])
+}
+
+model AnalyticsSetting {
+  id               String    @id @default(cuid())
+  scopeType        String    @default("PLATFORM") // PLATFORM, ORGANIZATION, WORKSPACE
+  scopeId          String?   // null for PLATFORM, orgId for ORGANIZATION, workspaceId for WORKSPACE
+  retentionDays    Int       @default(90)
+  dntRespect       Boolean   @default(true)
+  ipAnonymization  Boolean   @default(true)
+  captureClientEvents Boolean @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([scopeType, scopeId])
+  @@index([scopeType, scopeId])
+}
+
+
+

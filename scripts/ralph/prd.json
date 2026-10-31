@@ -1,63 +1,96 @@
 {
   "project": "PulseFlow Enterprise SaaS",
-  "branchName": "ralph/observability-expansion",
-  "description": "Extend PulseFlow with outbound webhook dispatchers, telemetry data exports, key auto-rotation policies, and invitation token verification.",
+  "branchName": "ralph/production-monitoring-maintenance",
+  "description": "Phase 10: Production monitoring, structured logging, performance telemetry, automated backups, non-destructive disaster recovery drills, and maintenance automation.",
   "userStories": [
     {
-      "id": "US-001",
-      "title": "Outbound Webhooks Delivery Engine",
-      "description": "As a workspace administrator, I want to configure outbound webhook HTTP endpoints so that third-party systems receive automated POST notifications when error spikes or latency thresholds are breached.",
+      "id": "US-P10-001",
+      "title": "Structured Application Logging & PII Scrubbing",
+      "description": "As a platform SRE, I want structured JSON application logging with automatic scrubbing of passwords, secrets, bearer tokens, and PII, so that incidents can be debugged without exposing sensitive data.",
       "acceptanceCriteria": [
-        "Add Webhook model to schema.prisma (id, workspaceId, url, secretKey, events, active, createdAt)",
-        "Implement GET and POST /api/workspaces/[id]/webhooks route handlers",
-        "Add Webhooks management tab or section to Workspace Settings with test delivery ping",
+        "Create src/lib/logger.ts with log levels (INFO, WARN, ERROR, DEBUG)",
+        "Scrub sensitive fields: password, secret, token, key, authorization, cookie",
+        "Include timestamp, context tags, durationMs, and error stack traces in output",
+        "Add unit tests verifying scrubbed fields and JSON formatting",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Ensure webhook secrets are generated with crypto.randomBytes and requests are sent with X-PulseFlow-Signature header."
+      "notes": "Ensure logger does not throw on circular references or non-serializable objects."
     },
     {
-      "id": "US-002",
-      "title": "Telemetry Raw Data Exporter (CSV/JSON)",
-      "description": "As an engineering analyst, I want to export raw metric events from the analytics dashboard in CSV or JSON format for external BI analysis.",
+      "id": "US-P10-002",
+      "title": "SRE Monitoring & Health Diagnostics Gateway",
+      "description": "As a system administrator, I want an authenticated admin monitoring API endpoint that provides real-time system metrics, memory utilization, database latency, and error rates.",
       "acceptanceCriteria": [
-        "Create GET /api/workspaces/[id]/metrics/export endpoint supporting format=csv and format=json",
-        "Add 'Export Raw Telemetry' button with dropdown on the Analytics page",
-        "Include timestamp, eventType, source, statusCode, latencyMs, and payload in export",
+        "Create GET /api/admin/monitoring endpoint restricted to SUPERADMIN role",
+        "Report Node.js memory metrics (rss, heapUsed, heapTotal, external) and process uptime",
+        "Report database latency, connection status, and table record counts",
+        "Report recent error log summary and slow request counts",
         "Typecheck passes"
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Stream or paginate large datasets to avoid memory exhaustion."
+      "notes": "Verify non-superadmin users receive 403 Forbidden."
     },
     {
-      "id": "US-003",
-      "title": "API Key Expiration & Rotation Safeguards",
-      "description": "As a security officer, I want API keys to support optional expiration dates (30d, 90d, 1yr) and display warning badges when expiration is within 7 days.",
+      "id": "US-P10-003",
+      "title": "Performance Latency Interceptor & SLA Anomaly Tracker",
+      "description": "As a DevOps engineer, I want performance latency tracking that aggregates endpoint response percentiles (P50, P90, P99) and flags slow requests exceeding SLA thresholds (>500ms).",
       "acceptanceCriteria": [
-        "Update API key generation modal to include expiration duration picker",
-        "Enforce expiration check in /api/v1/ingest (reject expired keys with 401 Expired)",
-        "Display amber warning badge on keys list for tokens expiring within 7 days",
+        "Create src/lib/performance-monitor.ts tracking endpoint durations",
+        "Calculate statistical percentiles (P50, P90, P99) across recorded requests",
+        "Flag requests exceeding 500ms threshold as slow request warnings",
+        "Add unit tests validating percentile calculations and threshold alerting",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": true,
-      "notes": "Verify time comparisons take UTC into account."
+      "notes": "Keep in-memory ring buffer bounded to prevent unbounded memory growth."
     },
     {
-      "id": "US-004",
-      "title": "Workspace Invitation Acceptance Flow",
-      "description": "As an invited team member, I want to accept an email invitation via a unique token link so that I can set my password and join the workspace.",
+      "id": "US-P10-004",
+      "title": "Automated Non-Destructive Disaster Recovery Drill",
+      "description": "As an SRE, I want an automated disaster recovery drill script that tests restoring database backups into an isolated test environment without touching production data.",
       "acceptanceCriteria": [
-        "Create /invite/[token] onboarding page",
-        "Verify invitation token against database and activate membership",
-        "Redirect authenticated member directly to the workspace dashboard upon completion",
-        "Typecheck passes"
+        "Create scripts/test-restore-drill.mjs executing non-destructive restore rehearsal",
+        "Create verified test database backup and restore into temporary isolated SQLite file",
+        "Validate database tables, foreign keys, row counts, and checksums in restored copy",
+        "Clean up temporary drill database and report RTO/RPO drill metrics",
+        "Add npm run drill script to package.json"
       ],
       "priority": 4,
       "passes": true,
-      "notes": "Clean up pending invitation record once membership is confirmed."
+      "notes": "Never overwrite production dev.db during restore drill."
+    },
+    {
+      "id": "US-P10-005",
+      "title": "Maintenance Automation & Expired Token Cleanup",
+      "description": "As a platform operator, I want an automated maintenance routine that cleans up expired tokens, optimizes database storage, and verifies secret rotation health.",
+      "acceptanceCriteria": [
+        "Create scripts/maintenance.mjs performing routine housekeeping",
+        "Prune expired password reset tokens and verification tokens older than expiration dates",
+        "Prune expired invitation tokens",
+        "Add npm run maintenance script to package.json",
+        "Report cleaned record counts and database status"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Perform all deletions in safe atomic operations with audit logging."
+    },
+    {
+      "id": "US-P10-006",
+      "title": "Production Monitoring & Maintenance Runbook Documentation",
+      "description": "As an on-call engineer, I want comprehensive documentation covering alerting thresholds, disaster recovery runbooks, maintenance schedules, and incident response procedures.",
+      "acceptanceCriteria": [
+        "Create docs/MONITORING_MAINTENANCE.md",
+        "Document alerting thresholds (error rate >1%, latency P99 >1000ms, DB latency >50ms)",
+        "Document RTO (<15 min) and RPO (<1 hour) recovery objectives",
+        "Document maintenance automation schedules and secret rotation procedures"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Include clear escalation contacts and incident severity definitions."
     }
   ]
 }

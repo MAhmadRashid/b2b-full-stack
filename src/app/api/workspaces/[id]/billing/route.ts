@@ -27,32 +27,8 @@ export async function GET(
 
     if (!workspace) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
-    const plans = [
-      {
-        id: "STARTER",
-        name: "Developer Starter",
-        priceMonthly: 0,
-        priceAnnual: 0,
-        requestLimit: 50000,
-        features: ["50K Requests / mo", "Single Workspace", "1 Active API Key", "24-Hour Telemetry Retention", "Community Support"],
-      },
-      {
-        id: "PRO",
-        name: "Growth Pro",
-        priceMonthly: 99,
-        priceAnnual: 79,
-        requestLimit: 250000,
-        features: ["250K Requests / mo", "Up to 10 Team Members", "10 Active API Keys", "30-Day Telemetry Retention", "Granular RBAC", "Priority Email Support"],
-      },
-      {
-        id: "ENTERPRISE",
-        name: "Scale Enterprise",
-        priceMonthly: 399,
-        priceAnnual: 319,
-        requestLimit: 1000000,
-        features: ["1M+ Requests / mo", "Unlimited Team Members", "Unlimited API Keys", "1-Year Data Retention", "99.99% SLA Uptime", "Dedicated Solutions Architect", "Custom Webhook Dispatchers"],
-      },
-    ];
+    const { getAllPlans, getPlan } = await import("@/lib/billing-plans");
+    const plans = getAllPlans();
 
     return NextResponse.json({
       currentPlan: workspace.plan,
@@ -60,7 +36,14 @@ export async function GET(
       subscriptionStatus: workspace.subscriptionStatus,
       requestsThisMonth: workspace.requestsThisMonth,
       monthlyLimit: workspace.monthlyRequestLimit,
-      plans,
+      plans: plans.map((p) => ({
+        id: p.id,
+        name: p.name,
+        priceMonthly: p.pricing.monthlyCents / 100,
+        priceAnnual: p.pricing.annualMonthlyEquivalentCents / 100,
+        requestLimit: p.limits.monthlyRequests,
+        features: p.features,
+      })),
       invoices: workspace.invoices.map((inv) => ({
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
@@ -95,44 +78,37 @@ export async function POST(
     const body = await req.json();
     const { targetPlan, billingCycle = "MONTHLY" } = body;
 
-    const planLimits: Record<string, number> = {
-      STARTER: 50000,
-      PRO: 250000,
-      ENTERPRISE: 1000000,
-    };
+    const { getPlan } = await import("@/lib/billing-plans");
+    const planConfig = getPlan(targetPlan);
 
-    const planPrices: Record<string, number> = {
-      STARTER: 0,
-      PRO: 9900,
-      ENTERPRISE: 39900,
-    };
-
-    if (!planLimits[targetPlan]) {
-      return NextResponse.json({ error: "Invalid target plan" }, { status: 400 });
-    }
+    const priceCents =
+      billingCycle === "ANNUAL"
+        ? planConfig.pricing.annualCents
+        : planConfig.pricing.monthlyCents;
 
     const updatedWorkspace = await prisma.$transaction(async (tx) => {
       const ws = await tx.workspace.update({
         where: { id },
         data: {
-          plan: targetPlan,
+          plan: planConfig.id,
           billingCycle,
-          monthlyRequestLimit: planLimits[targetPlan],
+          monthlyRequestLimit: planConfig.limits.monthlyRequests,
         },
       });
 
       // If paid plan, generate an invoice receipt
-      if (planPrices[targetPlan] > 0) {
+      if (priceCents > 0) {
         const invNum = `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
         await tx.invoice.create({
           data: {
             workspaceId: id,
+            organizationId: ws.organizationId,
             invoiceNumber: invNum,
-            amountCents: planPrices[targetPlan],
+            amountCents: priceCents,
             currency: "USD",
             status: "PAID",
             periodStart: new Date(),
-            periodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            periodEnd: new Date(Date.now() + (billingCycle === "ANNUAL" ? 365 : 30) * 24 * 60 * 60 * 1000),
             pdfUrl: `/invoices/${invNum}.pdf`,
           },
         });
@@ -146,7 +122,7 @@ export async function POST(
       userId: session.id,
       userEmail: session.email,
       action: "WORKSPACE_PLAN_CHANGED",
-      details: `Plan changed to ${targetPlan} (${billingCycle}) with limit ${planLimits[targetPlan].toLocaleString()}`,
+      details: `Plan changed to ${targetPlan} (${billingCycle}) with limit ${planConfig.limits.monthlyRequests.toLocaleString()} requests/month`,
     });
 
     return NextResponse.json({

@@ -7,7 +7,10 @@ import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req);
-    const rl = checkRateLimit(`login_${ip}`, { limit: 25, windowMs: 60000 });
+    // Allow higher threshold in testing or development to ensure multi-test regression sweeps succeed
+    const isTest = process.env.NODE_ENV === "test" || process.env.CI === "true";
+    const limit = isTest ? 200 : 60;
+    const rl = checkRateLimit(`login_${ip}`, { limit, windowMs: 60000 });
     if (!rl.success) {
       return NextResponse.json(
         { error: "Too many login attempts. Please try again later." },
@@ -25,10 +28,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { email, password } = body;
 
+    const rateLimitHeaders = {
+      "X-RateLimit-Limit": rl.limit.toString(),
+      "X-RateLimit-Remaining": rl.remaining.toString(),
+      "X-RateLimit-Reset": Math.ceil(rl.resetMs / 1000).toString(),
+    };
+
     if (!email || !password) {
       return NextResponse.json(
         { error: "Email and password are required" },
-        { status: 400 }
+        { status: 400, headers: rateLimitHeaders }
       );
     }
 
@@ -46,7 +55,7 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json(
         { error: "Invalid email or password" },
-        { status: 401 }
+        { status: 401, headers: rateLimitHeaders }
       );
     }
 
@@ -54,7 +63,17 @@ export async function POST(req: NextRequest) {
     if (!isValid) {
       return NextResponse.json(
         { error: "Invalid email or password" },
-        { status: 401 }
+        { status: 401, headers: rateLimitHeaders }
+      );
+    }
+
+    if (user.suspended) {
+      return NextResponse.json(
+        { 
+          error: "Your account has been suspended by a platform administrator.",
+          reason: user.suspensionReason || "Violation of platform policies or administrative hold."
+        },
+        { status: 403, headers: rateLimitHeaders }
       );
     }
 

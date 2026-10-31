@@ -4,6 +4,7 @@ import React, { useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Lock, ArrowLeft, CheckCircle2, AlertCircle, ShieldCheck, Activity } from "lucide-react";
+import { NexoraIcon } from "@/components/ui/NexoraLogo";
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
@@ -223,11 +224,11 @@ export default function ResetPasswordPage() {
               marginBottom: "14px",
             }}
           >
-            <Activity size={14} /> PulseFlow Security
+            <NexoraIcon size={16} /> Nexora Security
           </div>
           <h1 style={{ fontSize: "24px", fontWeight: 800 }}>Create New Password</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginTop: "4px" }}>
-            Set a new secure password for your PulseFlow account
+            Set a new secure password for your Nexora account
           </p>
         </div>
 

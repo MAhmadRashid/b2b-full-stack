@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" width="100%" height="100%">
+  <defs>
+    <!-- Modern Blue-Violet Continuous Flow Gradient -->
+    <linearGradient id="pf-primary-flow" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="35%" stop-color="#6366f1" />
+      <stop offset="70%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#d946ef" />
+    </linearGradient>
+
+    <!-- Secondary Ambient Ribbon Gradient -->
+    <linearGradient id="pf-ambient-ribbon" x1="8" y1="40" x2="40" y2="8" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.9" />
+      <stop offset="50%" stop-color="#6366f1" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#a855f7" stop-opacity="0.9" />
+    </linearGradient>
+
+    <!-- Glow Filter for Ambient Depth -->
+    <filter id="pf-glow" x="-15%" y="-15%" width="130%" height="130%" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="1.5" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <!-- Core Pulse Center Radial Spark -->
+    <radialGradient id="pf-pulse-center" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="45%" stop-color="#c4b5fd" />
+      <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Ambient Wave Ribbon (Secondary Lower Harmonic Flow) -->
+  <path
+    d="M 6 32 C 12 36, 17 38, 23 33 C 29 28, 33 22, 42 16"
+    stroke="url(#pf-ambient-ribbon)"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-dasharray="0.5 0.5"
+    opacity="0.45"
+  />
+
+  <!-- Primary Dynamic Fluid Loop & Pulse Path -->
+  <!-- Creates an interlocking Mobius flow intertwining an acute pulse frequency peak with fluid curves -->
+  <path
+    d="M 6 25 C 10 25, 14 26, 17 21 L 21 11 L 26 37 L 30 20 L 33 25 C 37 25, 40 23, 42 18"
+    stroke="url(#pf-primary-flow)"
+    stroke-width="3.75"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#pf-glow)"
+  />
+
+  <!-- Convergent Energy Nodes along the Flow Vectors -->
+  <circle cx="21" cy="11" r="2.25" fill="#60a5fa" />
+  <circle cx="26" cy="37" r="2.5" fill="#c084fc" />
+  <circle cx="30" cy="20" r="2" fill="#e879f9" />
+
+  <!-- Core Radiant Pulse Core -->
+  <circle cx="24" cy="24" r="5" fill="url(#pf-pulse-center)" opacity="0.8" />
+  <circle cx="24" cy="24" r="1.5" fill="#ffffff" />
+</svg>

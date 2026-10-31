@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useDashboard } from "../layout";
+import { useDashboard } from "../DashboardContext";
 import {
   Users,
   UserPlus,
@@ -155,6 +155,8 @@ export default function TeamPage() {
 
   const handleRoleChange = async (memberId: string, newRole: string) => {
     if (!activeWorkspace) return;
+    setError("");
+    setSuccessMsg("");
 
     try {
       const res = await fetch(`/api/workspaces/${activeWorkspace.id}/members/${memberId}`, {
@@ -162,12 +164,17 @@ export default function TeamPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: newRole }),
       });
+      const data = await res.json();
 
       if (res.ok) {
+        setSuccessMsg("Role successfully updated!");
+        setTimeout(() => setSuccessMsg(""), 3000);
         await fetchMembers();
+      } else {
+        setError(data.error || "Failed to change member role.");
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setError("Network error while changing member role.");
     }
   };
 
@@ -175,16 +182,24 @@ export default function TeamPage() {
     if (!activeWorkspace) return;
     if (!confirm(`Are you sure you want to remove ${email} from this workspace?`)) return;
 
+    setError("");
+    setSuccessMsg("");
+
     try {
       const res = await fetch(`/api/workspaces/${activeWorkspace.id}/members/${memberId}`, {
         method: "DELETE",
       });
+      const data = await res.json();
 
       if (res.ok) {
+        setSuccessMsg(`Member ${email} removed.`);
+        setTimeout(() => setSuccessMsg(""), 3000);
         await fetchMembers();
+      } else {
+        setError(data.error || "Failed to remove member.");
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setError("Network error while removing member.");
     }
   };
 
@@ -431,13 +446,14 @@ export default function TeamPage() {
                     {canManageTeam && (
                       <td style={{ textAlign: "right" }}>
                         <div style={{ display: "inline-flex", alignItems: "center", gap: "10px" }}>
-                          {currentUserRole === "OWNER" && m.role !== "OWNER" && (
+                          {canManageTeam && m.role !== "OWNER" && (
                             <select
                               value={m.role}
                               onChange={(e) => handleRoleChange(m.id, e.target.value)}
                               className="form-input"
                               style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}
                             >
+                              {currentUserRole === "OWNER" && <option value="OWNER">OWNER</option>}
                               <option value="ADMIN">ADMIN</option>
                               <option value="MEMBER">MEMBER</option>
                               <option value="VIEWER">VIEWER</option>

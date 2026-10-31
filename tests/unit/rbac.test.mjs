@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-// Re-implement or import pure logic for RBAC rank checks
 const ROLE_RANKS = {
   OWNER: 4,
   ADMIN: 3,
@@ -10,10 +9,23 @@ const ROLE_RANKS = {
 };
 
 function hasMinimumRole(userRole, requiredRole) {
-  const userRank = ROLE_RANKS[userRole];
-  const reqRank = ROLE_RANKS[requiredRole];
+  const userRank = ROLE_RANKS[userRole?.toUpperCase()];
+  const reqRank = ROLE_RANKS[requiredRole?.toUpperCase()];
   if (userRank === undefined || reqRank === undefined) return false;
   return userRank >= reqRank;
+}
+
+function canAssignRole(actorRole, targetRole) {
+  const normActor = actorRole?.toUpperCase();
+  const normTarget = targetRole?.toUpperCase();
+
+  if (normActor === "OWNER") {
+    return ["OWNER", "ADMIN", "MEMBER", "VIEWER"].includes(normTarget);
+  }
+  if (normActor === "ADMIN") {
+    return ["ADMIN", "MEMBER", "VIEWER"].includes(normTarget);
+  }
+  return false;
 }
 
 test("RBAC: OWNER satisfies all role requirements", () => {
@@ -47,4 +59,24 @@ test("RBAC: VIEWER only satisfies VIEWER requirement", () => {
 test("RBAC: Invalid or unknown roles fail gracefully", () => {
   assert.equal(hasMinimumRole("UNKNOWN", "VIEWER"), false);
   assert.equal(hasMinimumRole("VIEWER", "INVALID"), false);
+});
+
+test("RBAC Role Escalation: OWNER can assign all roles including OWNER", () => {
+  assert.equal(canAssignRole("OWNER", "OWNER"), true);
+  assert.equal(canAssignRole("OWNER", "ADMIN"), true);
+  assert.equal(canAssignRole("OWNER", "MEMBER"), true);
+  assert.equal(canAssignRole("OWNER", "VIEWER"), true);
+});
+
+test("RBAC Role Escalation: ADMIN cannot promote to OWNER", () => {
+  assert.equal(canAssignRole("ADMIN", "OWNER"), false, "ADMIN must not be allowed to assign OWNER role");
+  assert.equal(canAssignRole("ADMIN", "ADMIN"), true);
+  assert.equal(canAssignRole("ADMIN", "MEMBER"), true);
+  assert.equal(canAssignRole("ADMIN", "VIEWER"), true);
+});
+
+test("RBAC Role Escalation: MEMBER and VIEWER cannot assign any roles", () => {
+  assert.equal(canAssignRole("MEMBER", "VIEWER"), false);
+  assert.equal(canAssignRole("MEMBER", "MEMBER"), false);
+  assert.equal(canAssignRole("VIEWER", "VIEWER"), false);
 });

@@ -38,13 +38,14 @@ export async function GET(
 
     if (!workspace) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
-    // Fetch events in range
+    // Fetch events in range (bounded to prevent memory exhaustion)
     const events = await prisma.metricEvent.findMany({
       where: {
         workspaceId: id,
         timestamp: { gte: sinceDate },
       },
       orderBy: { timestamp: "desc" },
+      take: 2500,
     });
 
     const totalEvents = events.length;

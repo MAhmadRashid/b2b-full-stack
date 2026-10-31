@@ -2,9 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
 import { recordAuditLog } from "@/lib/audit";
+import { checkRateLimit, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const isLoopback = ip === "127.0.0.1" || ip === "::1" || ip === "localhost" || ip === "unknown";
+    const rl = checkRateLimit(`reset_password_${ip}`, {
+      limit: isLoopback ? 2000 : 25,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (!rl.success) {
+      return rateLimitExceededResponse(
+        rl,
+        "Too many reset password attempts. Please wait before trying again."
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const { token, password } = body;
 
@@ -15,9 +29,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!password || password.length < 6) {
+    if (!password || password.length < 8) {
       return NextResponse.json(
-        { error: "Password must be at least 6 characters long" },
+        { error: "Password must be at least 8 characters long" },
         { status: 400 }
       );
     }

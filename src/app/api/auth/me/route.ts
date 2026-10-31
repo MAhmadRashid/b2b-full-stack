@@ -26,6 +26,8 @@ export async function GET(req: NextRequest) {
                 id: true,
                 name: true,
                 slug: true,
+                logoUrl: true,
+                ownerId: true,
               },
             },
           },
@@ -39,6 +41,15 @@ export async function GET(req: NextRequest) {
                 slug: true,
                 plan: true,
                 organizationId: true,
+                creatorId: true,
+                creator: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    avatarUrl: true,
+                  },
+                },
                 subscriptionStatus: true,
                 requestsThisMonth: true,
                 monthlyRequestLimit: true,
@@ -54,6 +65,33 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ authenticated: false, user: null }, { status: 401 });
     }
 
+    // If SUPERADMIN, also make sure all organizations and workspaces are discoverable
+    let organizations = userWithWorkspaces.orgMemberships?.map((om) => ({
+      id: om.organization.id,
+      name: om.organization.name,
+      slug: om.organization.slug,
+      logoUrl: om.organization.logoUrl,
+      ownerId: om.organization.ownerId,
+      role: om.role,
+    })) || [];
+
+    if (userWithWorkspaces.systemRole === "SUPERADMIN" && organizations.length === 0) {
+      const allOrgs = await prisma.organization.findMany({
+        take: 10,
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          logoUrl: true,
+          ownerId: true,
+        },
+      });
+      organizations = allOrgs.map((o) => ({
+        ...o,
+        role: "OWNER",
+      }));
+    }
+
     return NextResponse.json({
       authenticated: true,
       user: {
@@ -65,18 +103,15 @@ export async function GET(req: NextRequest) {
         emailVerified: userWithWorkspaces.emailVerified,
         createdAt: userWithWorkspaces.createdAt,
       },
-      organizations: userWithWorkspaces.orgMemberships?.map((om) => ({
-        id: om.organization.id,
-        name: om.organization.name,
-        slug: om.organization.slug,
-        role: om.role,
-      })) || [],
+      organizations,
       workspaces: userWithWorkspaces.memberships.map((m) => ({
         id: m.workspace.id,
         name: m.workspace.name,
         slug: m.workspace.slug,
         role: m.role,
         organizationId: m.workspace.organizationId,
+        creatorId: m.workspace.creatorId,
+        creator: m.workspace.creator,
         plan: m.workspace.plan,
         subscriptionStatus: m.workspace.subscriptionStatus,
         requestsThisMonth: m.workspace.requestsThisMonth,

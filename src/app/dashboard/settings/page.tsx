@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useDashboard } from "../layout";
+import { useDashboard } from "../DashboardContext";
 import {
   Settings,
   ShieldAlert,
@@ -61,7 +61,7 @@ const AVAILABLE_EVENTS = [
 export default function SettingsPage() {
   const router = useRouter();
   const { user, activeWorkspace, refreshUserData } = useDashboard();
-  const [activeTab, setActiveTab] = useState<"general" | "webhooks" | "profile">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "webhooks" | "profile" | "notifications">("general");
 
   // General settings state
   const [workspaceName, setWorkspaceName] = useState("");
@@ -114,6 +114,59 @@ export default function SettingsPage() {
     result: TestPingResult;
   } | null>(null);
 
+  // Notification Preferences state
+  const [notifPrefs, setNotifPrefs] = useState({
+    securityAlerts: true,
+    billingAlerts: true,
+    usageAlerts: true,
+    teamAlerts: true,
+    apiKeyAlerts: true,
+    marketingEmails: false,
+    emailFrequency: "IMMEDIATE",
+  });
+  const [loadingPrefs, setLoadingPrefs] = useState(false);
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const [prefsSuccess, setPrefsSuccess] = useState<string | null>(null);
+
+  const fetchNotificationPreferences = async () => {
+    setLoadingPrefs(true);
+    try {
+      const res = await fetch("/api/users/preferences/notifications");
+      if (res.ok) {
+        const d = await res.json();
+        if (d.preferences) {
+          setNotifPrefs(d.preferences);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load preferences:", e);
+    } finally {
+      setLoadingPrefs(false);
+    }
+  };
+
+  const handleSavePreferences = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingPrefs(true);
+    setPrefsSuccess(null);
+    try {
+      const res = await fetch("/api/users/preferences/notifications", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(notifPrefs),
+      });
+      const d = await res.json();
+      if (res.ok) {
+        setPrefsSuccess("Preferences saved successfully!");
+        setTimeout(() => setPrefsSuccess(null), 4000);
+      }
+    } catch {
+      console.error("Failed to save preferences");
+    } finally {
+      setSavingPrefs(false);
+    }
+  };
+
   useEffect(() => {
     if (activeWorkspace) {
       setWorkspaceName(activeWorkspace.name);
@@ -125,6 +178,9 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeTab === "profile" || user) {
       fetchUserProfile();
+    }
+    if (activeTab === "notifications") {
+      fetchNotificationPreferences();
     }
   }, [activeTab, user?.id]);
 
@@ -496,6 +552,15 @@ export default function SettingsPage() {
         >
           <User size={15} /> My Profile & Security
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("notifications")}
+          className={`btn ${activeTab === "notifications" ? "btn-primary" : "btn-secondary"} btn-sm`}
+          style={{ display: "flex", alignItems: "center", gap: "8px" }}
+        >
+          <Mail size={15} /> Email & Notifications
+        </button>
       </div>
 
       {savedSuccess && (
@@ -564,6 +629,50 @@ export default function SettingsPage() {
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Interactive Product Tour Management Card */}
+          <div className="glass-card" style={{ padding: "24px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px" }}>
+              <div>
+                <h3 style={{ fontSize: "16px", marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Activity size={16} color="#818cf8" /> Interactive Product Tour & Guide
+                </h3>
+                <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+                  Need a refresher on navigating workspaces, team controls, telemetry, and API tokens?
+                </p>
+              </div>
+
+              <button
+                id="btn-restart-product-tour"
+                type="button"
+                onClick={async () => {
+                  try {
+                    await fetch("/api/onboarding", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        tourCompleted: false,
+                        tourDismissed: false,
+                      }),
+                    });
+                    router.push("/dashboard");
+                  } catch (e) {
+                    console.error("Failed to reset product tour", e);
+                  }
+                }}
+                className="btn btn-secondary btn-sm"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  borderColor: "rgba(99, 102, 241, 0.4)",
+                  color: "#a5b4fc",
+                }}
+              >
+                <RefreshCw size={14} /> Restart Product Tour
+              </button>
+            </div>
           </div>
 
           {/* Audit Log Table */}
@@ -832,7 +941,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div style={{ background: "rgba(0,0,0,0.3)", padding: "10px", borderRadius: "8px" }}>
-                  <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>X-PulseFlow-Signature (HMAC-SHA256)</div>
+                  <div style={{ color: "var(--text-muted)", marginBottom: "4px" }}>X-Nexora-Signature (HMAC-SHA256)</div>
                   <span className="mono" style={{ fontSize: "11px", color: "#818cf8", wordBreak: "break-all" }}>
                     {testResult.result.signature.slice(0, 24)}...
                   </span>
@@ -1413,6 +1522,125 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* TAB 4: NOTIFICATIONS & EMAIL PREFERENCES */}
+      {activeTab === "notifications" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          {prefsSuccess && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "12px 16px",
+                background: "rgba(16, 185, 129, 0.12)",
+                border: "1px solid rgba(16, 185, 129, 0.3)",
+                borderRadius: "8px",
+                color: "#34d399",
+                fontSize: "13.5px",
+              }}
+            >
+              <CheckCircle2 size={16} />
+              <span>{prefsSuccess}</span>
+            </div>
+          )}
+
+          <div className="glass-card" style={{ padding: "24px" }}>
+            <div style={{ marginBottom: "20px" }}>
+              <h3 style={{ fontSize: "16px", marginBottom: "4px", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Mail size={16} color="#6366f1" /> Transactional & Operational Email Alerts
+              </h3>
+              <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+                Select which email notifications you wish to receive. Essential security alerts are always active.
+              </p>
+            </div>
+
+            <form onSubmit={handleSavePreferences}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px", marginBottom: "24px" }}>
+                {/* Security Alerts (Locked On) */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#fff", display: "flex", alignItems: "center", gap: "6px" }}>
+                      Security Alerts & Verification
+                      <span className="badge badge-success" style={{ fontSize: "10px" }}>ESSENTIAL</span>
+                    </div>
+                    <div style={{ fontSize: "12.5px", color: "var(--text-muted)", marginTop: "2px" }}>
+                      Password resets, email verification, and critical security anomaly warnings
+                    </div>
+                  </div>
+                  <input type="checkbox" checked disabled style={{ cursor: "not-allowed" }} />
+                </div>
+
+                {/* Billing Alerts */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#fff" }}>Billing & Payment Notifications</div>
+                    <div style={{ fontSize: "12.5px", color: "var(--text-muted)", marginTop: "2px" }}>
+                      Subscription renewals, cancellations, invoice receipts, and failed payment alerts
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.billingAlerts}
+                    onChange={(e) => setNotifPrefs({ ...notifPrefs, billingAlerts: e.target.checked })}
+                  />
+                </div>
+
+                {/* Usage Alerts */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#fff" }}>Usage Limit & Quota Thresholds</div>
+                    <div style={{ fontSize: "12.5px", color: "var(--text-muted)", marginTop: "2px" }}>
+                      Warnings when monthly telemetry ingestion crosses 80% or exceeds plan limits
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.usageAlerts}
+                    onChange={(e) => setNotifPrefs({ ...notifPrefs, usageAlerts: e.target.checked })}
+                  />
+                </div>
+
+                {/* Team Alerts */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#fff" }}>Team & Workspace Updates</div>
+                    <div style={{ fontSize: "12.5px", color: "var(--text-muted)", marginTop: "2px" }}>
+                      Invitations to join organizations or workspaces, role changes, and member departures
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.teamAlerts}
+                    onChange={(e) => setNotifPrefs({ ...notifPrefs, teamAlerts: e.target.checked })}
+                  />
+                </div>
+
+                {/* API Key Alerts */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", background: "rgba(255, 255, 255, 0.02)", borderRadius: "8px", border: "1px solid var(--border-subtle)" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, color: "#fff" }}>Developer API Key Lifecycle</div>
+                    <div style={{ fontSize: "12.5px", color: "var(--text-muted)", marginTop: "2px" }}>
+                      Alerts when new keys are generated, revoked, or approaching expiration dates
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={notifPrefs.apiKeyAlerts}
+                    onChange={(e) => setNotifPrefs({ ...notifPrefs, apiKeyAlerts: e.target.checked })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button type="submit" disabled={savingPrefs} className="btn btn-primary btn-sm">
+                  <Save size={14} /> {savingPrefs ? "Saving..." : "Save Preferences"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* CREATE WEBHOOK MODAL */}
       {showAddWebhookModal && (
         <div
@@ -1460,7 +1688,7 @@ export default function SettingsPage() {
             </div>
 
             <p style={{ color: "var(--text-secondary)", fontSize: "13.5px", marginBottom: "20px" }}>
-              PulseFlow will sign payloads with HMAC-SHA256 and deliver HTTP POST requests to this URL.
+              Nexora will sign payloads with HMAC-SHA256 and deliver HTTP POST requests to this URL.
             </p>
 
             {webhookError && (
@@ -1488,7 +1716,7 @@ export default function SettingsPage() {
                   id="whUrl"
                   type="url"
                   required
-                  placeholder="https://api.yourdomain.com/webhooks/pulseflow"
+                  placeholder="https://api.yourdomain.com/webhooks/nexora"
                   value={newWebhookUrl}
                   onChange={(e) => setNewWebhookUrl(e.target.value)}
                   className="form-input mono"

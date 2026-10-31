@@ -1,0 +1,153 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.systemRole == 'SUPERADMIN' ||
+         request.auth.token.admin == true);
+    }
+
+    function isOrgMember(orgId) {
+      return isAuthenticated() &&
+        (isSuperAdmin() ||
+         exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)));
+    }
+
+    function isWorkspaceMember(workspaceId) {
+      return isAuthenticated() &&
+        (isSuperAdmin() ||
+         exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)));
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // 1. Users
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isOwner(userId) || isSuperAdmin());
+      allow update: if isAuthenticated() && (isOwner(userId) || isSuperAdmin());
+      allow create, delete: if isSuperAdmin();
+    }
+
+    // 2. Organizations & Organization Members
+    match /organizations/{orgId} {
+      allow read: if isOrgMember(orgId);
+      allow create: if isAuthenticated();
+      allow update, delete: if isSuperAdmin() ||
+        (isOrgMember(orgId) && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role in ['OWNER', 'ADMIN']);
+
+      match /members/{memberId} {
+        allow read: if isOrgMember(orgId);
+        allow write: if isSuperAdmin() ||
+          (isOrgMember(orgId) && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role in ['OWNER', 'ADMIN']);
+      }
+    }
+
+    // 3. Workspaces
+    match /workspaces/{workspaceId} {
+      allow read: if isWorkspaceMember(workspaceId);
+      allow create: if isAuthenticated();
+      allow update, delete: if isSuperAdmin() ||
+        (isWorkspaceMember(workspaceId) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.role in ['OWNER', 'ADMIN']);
+
+      match /members/{memberId} {
+        allow read: if isWorkspaceMember(workspaceId);
+        allow write: if isSuperAdmin() ||
+          (isWorkspaceMember(workspaceId) && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.role in ['OWNER', 'ADMIN']);
+      }
+    }
+
+    // 4. Team Invitations
+    match /invitations/{invitationId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.email == request.auth.token.email || isSuperAdmin() ||
+         (resource.data.organizationId != null && isOrgMember(resource.data.organizationId)));
+      allow create, update, delete: if isSuperAdmin() ||
+        (request.resource.data.organizationId != null && isOrgMember(request.resource.data.organizationId));
+    }
+
+    // 5. Plans & Subscriptions
+    match /plans/{planId} {
+      allow read: if true; // Public pricing/plan definitions
+      allow write: if isSuperAdmin();
+    }
+
+    match /subscriptions/{subscriptionId} {
+      allow read: if isSuperAdmin() ||
+        (resource.data.organizationId != null && isOrgMember(resource.data.organizationId)) ||
+        (resource.data.workspaceId != null && isWorkspaceMember(resource.data.workspaceId));
+      allow write: if isSuperAdmin(); // Verified webhooks/backend write only
+    }
+
+    // 6. Usage Records
+    match /usageRecords/{recordId} {
+      allow read: if isSuperAdmin() ||
+        (resource.data.workspaceId != null && isWorkspaceMember(resource.data.workspaceId));
+      allow write: if isSuperAdmin();
+    }
+
+    // 7. Analytics Events & Daily Analytics
+    match /analyticsEvents/{eventId} {
+      allow create: if request.resource.data.sessionId is string
+                    && request.resource.data.eventName is string
+                    && request.resource.data.stage is string
+                    && (request.resource.data.workspaceId == null || isWorkspaceMember(request.resource.data.workspaceId));
+      allow read: if isSuperAdmin() ||
+        (resource.data.workspaceId != null && isWorkspaceMember(resource.data.workspaceId)) ||
+        (resource.data.organizationId != null && isOrgMember(resource.data.organizationId));
+      allow update, delete: if isSuperAdmin();
+    }
+
+    match /dailyAnalytics/{docId} {
+      allow read: if isSuperAdmin() ||
+        (resource.data.scopeType == 'WORKSPACE' && isWorkspaceMember(resource.data.scopeId)) ||
+        (resource.data.scopeType == 'ORGANIZATION' && isOrgMember(resource.data.scopeId));
+      allow write: if isSuperAdmin();
+    }
+
+    // 8. Notifications & Notification Preferences
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isWorkspaceMember(resource.data.workspaceId));
+      allow update: if isAuthenticated() &&
+        (resource.data.userId == request.auth.uid || isWorkspaceMember(resource.data.workspaceId));
+      allow create, delete: if isSuperAdmin() ||
+        (request.resource.data.workspaceId != null && isWorkspaceMember(request.resource.data.workspaceId));
+    }
+
+    match /notificationPreferences/{userId} {
+      allow read, write: if isAuthenticated() && (isOwner(userId) || isSuperAdmin());
+    }
+
+    // 9. Leads & Demo Requests
+    match /leads/{leadId} {
+      allow create: if request.resource.data.workEmail is string; // Public lead capture
+      allow read, update, delete: if isSuperAdmin();
+    }
+
+    // 10. API Keys (Hashed server-side, secret revealed once only)
+    match /apiKeys/{keyId} {
+      allow read: if isSuperAdmin() ||
+        (resource.data.workspaceId != null && isWorkspaceMember(resource.data.workspaceId)) ||
+        (resource.data.organizationId != null && isOrgMember(resource.data.organizationId));
+      allow write: if isSuperAdmin() ||
+        (request.resource.data.workspaceId != null && isWorkspaceMember(request.resource.data.workspaceId)) ||
+        (request.resource.data.organizationId != null && isOrgMember(request.resource.data.organizationId));
+    }
+
+    // 11. Audit Logs
+    match /auditLogs/{logId} {
+      allow read: if isSuperAdmin() ||
+        (resource.data.workspaceId != null && isWorkspaceMember(resource.data.workspaceId)) ||
+        (resource.data.organizationId != null && isOrgMember(resource.data.organizationId));
+      allow write: if isSuperAdmin(); // Server-side writes only
+    }
+  }
+}

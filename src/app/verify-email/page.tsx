@@ -4,6 +4,7 @@ import React, { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { CheckCircle2, AlertTriangle, ArrowRight, ShieldCheck, Activity } from "lucide-react";
+import { NexoraIcon } from "@/components/ui/NexoraLogo";
 
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
@@ -150,7 +151,7 @@ export default function VerifyEmailPage() {
               marginBottom: "14px",
             }}
           >
-            <Activity size={14} /> PulseFlow Identity
+            <NexoraIcon size={16} /> Nexora Identity
           </div>
           <h1 style={{ fontSize: "24px", fontWeight: 800 }}>Email Verification</h1>
         </div>

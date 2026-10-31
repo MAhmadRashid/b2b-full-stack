@@ -1,0 +1,53 @@
+name: PulseFlow SaaS CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test-and-build:
+    name: Test, Typecheck & Production Build
+    runs-on: ubuntu-latest
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: "file:./prisma/dev.db"
+      JWT_SECRET: "ci-test-secure-jwt-secret-string-at-least-32-chars-long"
+      NEXT_PUBLIC_APP_NAME: "PulseFlow"
+      NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client & Push SQLite Schema
+        run: |
+          npm run prisma:generate
+          npm run prisma:push
+          npm run prisma:seed
+
+      - name: Type Check (TypeScript strict)
+        run: npx tsc --noEmit
+
+      - name: Run Test Suite (Unit & Integration)
+        run: npm test
+
+      - name: Build Next.js Production Bundle
+        run: npm run build
+
+      - name: Run Background Daemon Server & Smoke Tests
+        run: |
+          npx next start -p 3000 &
+          sleep 5
+          npm run smoke

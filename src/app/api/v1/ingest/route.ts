@@ -27,19 +27,54 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 2. Locate active API keys
-    const activeKeys = await prisma.apiKey.findMany({
-      where: { revoked: false },
-      include: { workspace: true },
-    });
+    // 2. High-performance O(1) indexed lookup using keyPrefix (or previousPrefix during zero-downtime rotation)
+    let candidateKeys: any[] = [];
+    if (rawKey.length >= 17) {
+      const candidatePrefix = `${rawKey.substring(0, 13)}...${rawKey.substring(rawKey.length - 4)}`;
+      candidateKeys = await prisma.apiKey.findMany({
+        where: {
+          revoked: false,
+          OR: [
+            { keyPrefix: candidatePrefix },
+            { previousPrefix: candidatePrefix },
+          ],
+        },
+        include: { workspace: true },
+      });
+    }
 
-    let matchedKey: (typeof activeKeys)[0] | null = null;
+    // Safe fallback for legacy keys
+    if (candidateKeys.length === 0) {
+      candidateKeys = await prisma.apiKey.findMany({
+        where: { revoked: false },
+        take: 20,
+        include: { workspace: true },
+      });
+    }
 
-    for (const key of activeKeys) {
+    let matchedKey: (typeof candidateKeys)[0] | null = null;
+    let usedPreviousKey = false;
+
+    for (const key of candidateKeys) {
+      // Primary active secret comparison
       const isMatch = await bcrypt.compare(rawKey, key.hashedKey);
       if (isMatch) {
         matchedKey = key;
         break;
+      }
+
+      // Zero-downtime rotation: check previous secret if grace period is active
+      if (
+        key.previousHashedKey &&
+        key.gracePeriodEndsAt &&
+        new Date(key.gracePeriodEndsAt) > new Date()
+      ) {
+        const isPrevMatch = await bcrypt.compare(rawKey, key.previousHashedKey);
+        if (isPrevMatch) {
+          matchedKey = key;
+          usedPreviousKey = true;
+          break;
+        }
       }
     }
 
@@ -59,6 +94,26 @@ export async function POST(req: NextRequest) {
           expiredAt: matchedKey.expiresAt,
         },
         { status: 401 }
+      );
+    }
+
+    // Check IP Whitelist / CIDR restrictions
+    const { extractClientIp, validateIpRestriction } = await import("@/lib/ip-guard");
+    const clientIp = extractClientIp(
+      req.headers.get("x-forwarded-for"),
+      req.headers.get("x-real-ip"),
+      req.headers.get("cf-connecting-ip")
+    );
+
+    const ipCheck = validateIpRestriction(clientIp, matchedKey.ipRestrictions);
+    if (!ipCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: "Forbidden",
+          message: ipCheck.reason || "Client IP is not permitted to use this API key.",
+          clientIp,
+        },
+        { status: 403 }
       );
     }
 
@@ -105,7 +160,7 @@ export async function POST(req: NextRequest) {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
-    // 5. Persist MetricEvent, increment workspace usage, and update usage record
+    // 5. Persist MetricEvent, increment workspace usage, log API request, and update usage record
     const [event] = await prisma.$transaction([
       prisma.metricEvent.create({
         data: {
@@ -116,6 +171,19 @@ export async function POST(req: NextRequest) {
           statusCode: 201,
           latencyMs,
           payload: JSON.stringify(body.payload || body),
+        },
+      }),
+      prisma.apiRequestLog.create({
+        data: {
+          apiKeyId: matchedKey.id,
+          workspaceId: workspace.id,
+          organizationId: workspace.organizationId,
+          endpoint: "/api/v1/ingest",
+          method: "POST",
+          statusCode: 201,
+          durationMs: latencyMs,
+          ipAddress: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1",
+          userAgent: source.substring(0, 100),
         },
       }),
       prisma.workspace.update({

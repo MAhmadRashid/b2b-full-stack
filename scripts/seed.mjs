@@ -14,8 +14,11 @@ async function main() {
   await prisma.invoice.deleteMany({});
   await prisma.metricEvent.deleteMany({});
   await prisma.apiKey.deleteMany({});
+  await prisma.invitation.deleteMany({});
   await prisma.membership.deleteMany({});
   await prisma.workspace.deleteMany({});
+  await prisma.organizationMembership.deleteMany({});
+  await prisma.organization.deleteMany({});
   await prisma.user.deleteMany({});
 
   const passwordHash = await bcrypt.hash("Password123!", 10);
@@ -63,7 +66,39 @@ async function main() {
     },
   });
 
-  // 4. Create Workspaces
+  // 4. Create Organizations
+  const acmeOrg = await prisma.organization.create({
+    data: {
+      name: "Acme Corporation",
+      slug: "acme-corp",
+      logoUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100&h=100&fit=crop",
+      ownerId: demoUser.id,
+    },
+  });
+
+  const starlightOrg = await prisma.organization.create({
+    data: {
+      name: "Starlight Telemetry AI",
+      slug: "starlight-ai",
+      logoUrl: "https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=100&h=100&fit=crop",
+      ownerId: superAdmin.id,
+    },
+  });
+
+  // 5. Create Organization Memberships
+  await prisma.organizationMembership.createMany({
+    data: [
+      { userId: demoUser.id, organizationId: acmeOrg.id, role: "OWNER" },
+      { userId: engineerUser.id, organizationId: acmeOrg.id, role: "ADMIN" },
+      { userId: viewerUser.id, organizationId: acmeOrg.id, role: "VIEWER" },
+      { userId: superAdmin.id, organizationId: acmeOrg.id, role: "MEMBER" },
+
+      { userId: superAdmin.id, organizationId: starlightOrg.id, role: "OWNER" },
+      { userId: demoUser.id, organizationId: starlightOrg.id, role: "ADMIN" },
+    ],
+  });
+
+  // 6. Create Workspaces linked to Organizations with Creators
   const acmeWorkspace = await prisma.workspace.create({
     data: {
       name: "Acme Corp Cloud",
@@ -73,6 +108,22 @@ async function main() {
       subscriptionStatus: "ACTIVE",
       monthlyRequestLimit: 250000,
       requestsThisMonth: 168420,
+      organizationId: acmeOrg.id,
+      creatorId: demoUser.id,
+    },
+  });
+
+  const acmeStagingWorkspace = await prisma.workspace.create({
+    data: {
+      name: "Acme Staging Cluster",
+      slug: "acme-staging",
+      plan: "STARTER",
+      billingCycle: "MONTHLY",
+      subscriptionStatus: "ACTIVE",
+      monthlyRequestLimit: 50000,
+      requestsThisMonth: 12400,
+      organizationId: acmeOrg.id,
+      creatorId: engineerUser.id,
     },
   });
 
@@ -85,10 +136,12 @@ async function main() {
       subscriptionStatus: "ACTIVE",
       monthlyRequestLimit: 1000000,
       requestsThisMonth: 489310,
+      organizationId: starlightOrg.id,
+      creatorId: superAdmin.id,
     },
   });
 
-  // 5. Create Memberships with RBAC roles
+  // 7. Create Memberships with RBAC roles
   await prisma.membership.createMany({
     data: [
       { userId: demoUser.id, workspaceId: acmeWorkspace.id, role: "OWNER" },
@@ -96,8 +149,27 @@ async function main() {
       { userId: viewerUser.id, workspaceId: acmeWorkspace.id, role: "VIEWER" },
       { userId: superAdmin.id, workspaceId: acmeWorkspace.id, role: "MEMBER" },
 
+      { userId: demoUser.id, workspaceId: acmeStagingWorkspace.id, role: "OWNER" },
+      { userId: engineerUser.id, workspaceId: acmeStagingWorkspace.id, role: "ADMIN" },
+
       { userId: demoUser.id, workspaceId: starlightWorkspace.id, role: "ADMIN" },
       { userId: superAdmin.id, workspaceId: starlightWorkspace.id, role: "OWNER" },
+    ],
+  });
+
+  // 8. Seed Sample Pending Invitations
+  await prisma.invitation.createMany({
+    data: [
+      {
+        workspaceId: acmeWorkspace.id,
+        organizationId: acmeOrg.id,
+        email: "contractor@acmecorp.com",
+        role: "MEMBER",
+        token: "inv_demo_contractor_token_123",
+        expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7),
+        inviterEmail: demoUser.email,
+        status: "PENDING",
+      },
     ],
   });
 

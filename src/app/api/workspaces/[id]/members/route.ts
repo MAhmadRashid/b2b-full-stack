@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { checkWorkspacePermission } from "@/lib/rbac";
+import { checkWorkspacePermission, canAssignRole } from "@/lib/rbac";
 import { recordAuditLog } from "@/lib/audit";
-import bcrypt from "bcryptjs";
+import { sendInvitationEmail } from "@/lib/email";
 import crypto from "crypto";
 
 export async function GET(
@@ -35,7 +35,10 @@ export async function GET(
     });
 
     const pendingInvitations = await prisma.invitation.findMany({
-      where: { workspaceId: id },
+      where: {
+        workspaceId: id,
+        status: "PENDING",
+      },
       orderBy: { createdAt: "desc" },
     });
 
@@ -62,7 +65,7 @@ export async function GET(
       canManage: ["OWNER", "ADMIN"].includes(perm.role || ""),
     });
   } catch (error) {
-    console.error("List members error:", error);
+    console.error("List workspace members error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
@@ -79,14 +82,30 @@ export async function POST(
     const perm = await checkWorkspacePermission(session.id, id, "ADMIN");
     if (!perm.allowed) return NextResponse.json({ error: perm.error }, { status: 403 });
 
-    const body = await req.json();
-    const { email, role = "MEMBER", name, sendInviteLink = true } = body;
+    const body = await req.json().catch(() => ({}));
+    const { email, role = "MEMBER" } = body;
 
-    if (!email) {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    if (!email || !email.includes("@")) {
+      return NextResponse.json({ error: "A valid email address is required" }, { status: 400 });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
+    const assignedRole = role.toUpperCase();
+
+    // Prevent unauthorized privilege escalation:
+    // Only an OWNER can invite or assign another OWNER
+    if (!canAssignRole(perm.role || "MEMBER", assignedRole)) {
+      return NextResponse.json(
+        { error: `Forbidden: As ${perm.role}, you cannot assign the ${assignedRole} role.` },
+        { status: 403 }
+      );
+    }
+
+    const workspace = await prisma.workspace.findUnique({
+      where: { id },
+      select: { id: true, name: true, organizationId: true },
+    });
+    if (!workspace) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
 
     // Check if target user is already a member
     const existingUser = await prisma.user.findUnique({
@@ -105,79 +124,75 @@ export async function POST(
 
       if (existingMembership) {
         return NextResponse.json(
-          { error: "This user is already a member of this workspace" },
+          { error: "This user is already an active member of this workspace." },
           { status: 400 }
         );
       }
     }
 
-    const validRoles = ["ADMIN", "MEMBER", "VIEWER"];
-    const assignedRole = validRoles.includes(role.toUpperCase()) ? role.toUpperCase() : "MEMBER";
+    // Prevent duplicate pending invitations for the same email in this workspace
+    const existingInvitation = await prisma.invitation.findFirst({
+      where: {
+        workspaceId: id,
+        email: normalizedEmail,
+        status: "PENDING",
+      },
+    });
 
-    // Generate invitation token
-    const token = `inv_${crypto.randomBytes(24).toString("hex")}`;
+    if (existingInvitation) {
+      return NextResponse.json(
+        {
+          error: "A pending invitation already exists for this email in this workspace.",
+          invitationId: existingInvitation.id,
+        },
+        { status: 409 }
+      );
+    }
+
+    // Generate secure token and SHA-256 hash
+    const rawToken = `inv_ws_${crypto.randomBytes(24).toString("hex")}`;
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7-day validity
 
-    // Upsert pending invitation record
     const invitation = await prisma.invitation.create({
       data: {
         workspaceId: id,
+        organizationId: workspace.organizationId,
         email: normalizedEmail,
         role: assignedRole,
-        token,
+        token: rawToken,
+        tokenHash,
         expiresAt,
+        status: "PENDING",
         inviterEmail: session.email,
       },
     });
 
-    // Also provision default member record if direct add is desired or user exists
-    let newMembership: any = null;
-    let targetUser = existingUser;
+    const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/invite/${rawToken}`;
 
-    if (!targetUser && !sendInviteLink) {
-      const tempHash = await bcrypt.hash("Password123!", 10);
-      targetUser = await prisma.user.create({
-        data: {
-          email: normalizedEmail,
-          name: name ? name.trim() : normalizedEmail.split("@")[0],
-          passwordHash: tempHash,
-          systemRole: "USER",
-        },
-      });
-    }
-
-    if (targetUser && !sendInviteLink) {
-      newMembership = await prisma.membership.create({
-        data: {
-          userId: targetUser.id,
-          workspaceId: id,
-          role: assignedRole,
-          invitedBy: session.email,
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              name: true,
-              avatarUrl: true,
-            },
-          },
-        },
-      });
-    }
+    const emailResult = await sendInvitationEmail({
+      to: normalizedEmail,
+      inviterName: session.name,
+      inviterEmail: session.email,
+      targetName: workspace.name,
+      targetType: "workspace",
+      role: assignedRole,
+      inviteUrl,
+    });
 
     await recordAuditLog({
       workspaceId: id,
+      organizationId: workspace.organizationId,
       userId: session.id,
       userEmail: session.email,
       action: "TEAM_MEMBER_INVITED",
-      details: `Generated invitation for ${normalizedEmail} as ${assignedRole} (Token: ${token.slice(0, 10)}...)`,
+      details: `Generated invitation for ${normalizedEmail} as ${assignedRole} in workspace '${workspace.name}'`,
     });
 
     return NextResponse.json(
       {
         success: true,
+        message: "Invitation sent successfully.",
         invitation: {
           id: invitation.id,
           email: invitation.email,
@@ -185,23 +200,14 @@ export async function POST(
           token: invitation.token,
           inviteUrl: `/invite/${invitation.token}`,
           expiresAt: invitation.expiresAt,
+          emailDelivered: emailResult.delivered,
+          emailDeliveryStatus: emailResult.simulated ? "simulated" : emailResult.delivered ? "delivered" : "failed",
         },
-        member: newMembership
-          ? {
-              id: newMembership.id,
-              userId: newMembership.user.id,
-              name: newMembership.user.name,
-              email: newMembership.user.email,
-              avatarUrl: newMembership.user.avatarUrl,
-              role: newMembership.role,
-              joinedAt: newMembership.createdAt,
-            }
-          : null,
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error("Invite member error:", error);
+    console.error("Invite workspace member error:", error);
     return NextResponse.json({ error: "Failed to create team invitation" }, { status: 500 });
   }
 }
@@ -230,19 +236,23 @@ export async function DELETE(
       return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
     }
 
-    await prisma.invitation.delete({ where: { id: invitationId } });
+    await prisma.invitation.update({
+      where: { id: invitationId },
+      data: { status: "REVOKED" },
+    });
 
     await recordAuditLog({
       workspaceId: id,
+      organizationId: invitation.organizationId,
       userId: session.id,
       userEmail: session.email,
       action: "INVITATION_REVOKED",
-      details: `Revoked pending invitation for ${invitation.email}`,
+      details: `Revoked pending workspace invitation for ${invitation.email}`,
     });
 
-    return NextResponse.json({ success: true, message: "Invitation cancelled" });
+    return NextResponse.json({ success: true, message: "Invitation cancelled and revoked." });
   } catch (error) {
-    console.error("Delete invitation error:", error);
+    console.error("Delete workspace invitation error:", error);
     return NextResponse.json({ error: "Failed to revoke invitation" }, { status: 500 });
   }
 }

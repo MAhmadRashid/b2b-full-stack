@@ -236,13 +236,39 @@ async function executeTestDelivery(
     );
   }
 
+  // SSRF Protection: Prevent SSRF against cloud metadata or dangerous services
+  try {
+    const parsed = new URL(targetUrl);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return NextResponse.json(
+        { error: "Only http and https protocols are permitted" },
+        { status: 400 }
+      );
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    const blockedHosts = [
+      "169.254.169.254", // AWS/GCP/Azure link-local metadata
+      "metadata.google.internal",
+      "instance-data",
+      "100.100.100.200", // Alibaba cloud metadata
+    ];
+    if (blockedHosts.includes(hostname)) {
+      return NextResponse.json(
+        { error: "Requests to internal infrastructure and cloud metadata services are prohibited" },
+        { status: 400 }
+      );
+    }
+  } catch {
+    return NextResponse.json({ error: "Invalid target destination URL" }, { status: 400 });
+  }
+
   const payload = {
     event: "test.ping",
     workspaceId,
     timestamp: new Date().toISOString(),
     deliveryId: `del_${crypto.randomBytes(12).toString("hex")}`,
     data: {
-      message: "PulseFlow test notification: outbound webhook delivery operational.",
+      message: "Nexora test notification: outbound webhook delivery operational.",
       severity: "INFO",
       metrics: {
         currentErrorRate: "0.04%",
@@ -272,7 +298,10 @@ async function executeTestDelivery(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": "PulseFlow-Webhook-Dispatcher/1.0",
+        "User-Agent": "Nexora-Webhook-Dispatcher/1.0",
+        "X-Nexora-Signature": signature,
+        "X-Nexora-Event": "test.ping",
+        "X-Nexora-Timestamp": payload.timestamp,
         "X-PulseFlow-Signature": signature,
         "X-PulseFlow-Event": "test.ping",
         "X-PulseFlow-Timestamp": payload.timestamp,

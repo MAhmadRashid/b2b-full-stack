@@ -19,6 +19,22 @@ export async function GET(
     const workspace = await prisma.workspace.findUnique({
       where: { id },
       include: {
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatarUrl: true,
+          },
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+          },
+        },
         _count: {
           select: {
             members: true,
@@ -36,6 +52,8 @@ export async function GET(
       workspace: {
         ...workspace,
         role: perm.role,
+        canManage: ["OWNER", "ADMIN"].includes(perm.role || ""),
+        isOwner: perm.role === "OWNER",
       },
     });
   } catch (error) {
@@ -56,23 +74,48 @@ export async function PATCH(
     const perm = await checkWorkspacePermission(session.id, id, "ADMIN");
     if (!perm.allowed) return NextResponse.json({ error: perm.error }, { status: 403 });
 
-    const body = await req.json();
-    const { name, billingCycle } = body;
+    const body = await req.json().catch(() => ({}));
+    const { name, billingCycle, plan } = body;
+
+    const currentWs = await prisma.workspace.findUnique({ where: { id } });
+    if (!currentWs) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+
+    const updateData: any = {};
+    if (name !== undefined) {
+      if (!name || !name.trim()) {
+        return NextResponse.json({ error: "Workspace name cannot be empty" }, { status: 400 });
+      }
+      updateData.name = name.trim();
+    }
+    if (billingCycle !== undefined) {
+      updateData.billingCycle = billingCycle;
+    }
+    if (plan !== undefined) {
+      // Only owners can change plan
+      if (perm.role !== "OWNER") {
+        return NextResponse.json({ error: "Only workspace owners can alter the subscription plan" }, { status: 403 });
+      }
+      updateData.plan = plan.toUpperCase();
+      const limits: Record<string, number> = {
+        STARTER: 50000,
+        PRO: 250000,
+        ENTERPRISE: 1000000,
+      };
+      updateData.monthlyRequestLimit = limits[plan.toUpperCase()] || 50000;
+    }
 
     const updated = await prisma.workspace.update({
       where: { id },
-      data: {
-        ...(name && { name: name.trim() }),
-        ...(billingCycle && { billingCycle }),
-      },
+      data: updateData,
     });
 
     await recordAuditLog({
       workspaceId: id,
+      organizationId: updated.organizationId,
       userId: session.id,
       userEmail: session.email,
       action: "WORKSPACE_SETTINGS_UPDATED",
-      details: `Workspace settings updated: ${JSON.stringify({ name, billingCycle })}`,
+      details: `Workspace settings updated: ${JSON.stringify(updateData)}`,
     });
 
     return NextResponse.json({ workspace: updated });
@@ -94,12 +137,16 @@ export async function DELETE(
     const perm = await checkWorkspacePermission(session.id, id, "OWNER");
     if (!perm.allowed) return NextResponse.json({ error: perm.error }, { status: 403 });
 
+    const ws = await prisma.workspace.findUnique({ where: { id } });
+    if (!ws) return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+
     await recordAuditLog({
       workspaceId: id,
+      organizationId: ws.organizationId,
       userId: session.id,
       userEmail: session.email,
       action: "WORKSPACE_DELETED",
-      details: `Workspace ${id} was deleted by ${session.email}`,
+      details: `Workspace '${ws.name}' (${id}) was deleted by ${session.email}`,
     });
 
     await prisma.workspace.delete({ where: { id } });

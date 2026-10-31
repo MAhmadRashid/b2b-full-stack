@@ -2,10 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { recordAuditLog } from "@/lib/audit";
+import { checkRateLimit, getClientIp, rateLimitExceededResponse } from "@/lib/rate-limit";
 import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req);
+    const rl = checkRateLimit(`send_verification_${ip}`, { limit: 10, windowMs: 15 * 60 * 1000 });
+    if (!rl.success) {
+      return rateLimitExceededResponse(
+        rl,
+        "Too many verification requests. Please wait before requesting another."
+      );
+    }
+
     const session = await getSessionUser(req);
     const body = await req.json().catch(() => ({}));
     const targetEmail = (body.email || session?.email)?.toLowerCase().trim();
@@ -22,10 +32,11 @@ export async function POST(req: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
-      );
+      // Return success to mitigate email enumeration
+      return NextResponse.json({
+        success: true,
+        message: "If an account exists with this email, a verification link has been sent.",
+      });
     }
 
     if (user.emailVerified) {
@@ -62,9 +73,13 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Verification link generated.",
-      verificationUrl: `/verify-email?token=${token}`,
-      token,
+      message: "If an account exists with this email, a verification link has been sent.",
+      ...(process.env.NODE_ENV !== "production"
+        ? {
+            verificationUrl: `/verify-email?token=${token}`,
+            token,
+          }
+        : {}),
     });
   } catch (error) {
     console.error("Send verification error:", error);

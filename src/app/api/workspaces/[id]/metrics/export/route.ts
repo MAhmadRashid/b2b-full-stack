@@ -124,7 +124,12 @@ export async function GET(
 
 function escapeCsvValue(val: any): string {
   if (val === null || val === undefined) return '""';
-  const str = String(val).replace(/"/g, '""');
+  let str = String(val);
+  // CSV Injection prevention: prepend single quote if cell starts with dangerous formula characters
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  str = str.replace(/"/g, '""');
   return `"${str}"`;
 }
 
